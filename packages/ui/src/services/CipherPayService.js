@@ -28,7 +28,7 @@ class CipherPayService {
         this.stopEventStream = null;
         this.config = {
             chainType: 'solana', // Use string instead of ChainType enum
-            rpcUrl: import.meta.env.VITE_RPC_URL || 'http://127.0.0.1:8899',
+            rpcUrl: import.meta.env.VITE_RPC_URL || import.meta.env.VITE_SOLANA_RPC_URL || (import.meta.env.PROD ? 'https://api.devnet.solana.com' : 'http://127.0.0.1:8899'),
             relayerUrl: import.meta.env.VITE_RELAYER_URL || import.meta.env.VITE_SERVER_URL || 'http://localhost:8788',
             relayerApiKey: import.meta.env.VITE_RELAYER_API_KEY,
             contractAddress: import.meta.env.VITE_CONTRACT_ADDRESS,
@@ -55,14 +55,18 @@ class CipherPayService {
             console.log('Initializing CipherPay SDK...');
 
             // Load the SDK from global scope
-            const { CipherPaySDK, ChainType, sdkInitialized } = await loadSDK();
+            let { CipherPaySDK: sdkClass, ChainType, sdkInitialized } = await loadSDK();
 
-            if (!sdkInitialized || !CipherPaySDK) {
-                // Check if SDK exists but is not a constructor
-                if (typeof window !== 'undefined' && typeof window.CipherPaySDK !== 'undefined') {
+            if (!sdkInitialized || !sdkClass) {
+                // Fallback: if loader returned null but window has the class (e.g. production), use it
+                if (typeof window !== 'undefined' && typeof window.CipherPaySDK === 'function' &&
+                    window.CipherPaySDK.prototype && window.CipherPaySDK.prototype.constructor === window.CipherPaySDK) {
+                    sdkClass = window.CipherPaySDK;
+                } else if (typeof window !== 'undefined' && typeof window.CipherPaySDK !== 'undefined') {
                     throw new Error('CipherPaySDK found in global scope but is not a constructor class. The SDK appears to export utility functions only.');
+                } else {
+                    throw new Error('CipherPay SDK not available in global scope. Ensure the SDK bundle is loaded via script tag in index.html');
                 }
-                throw new Error('CipherPay SDK not available in global scope. Ensure the SDK bundle is loaded via script tag in index.html');
             }
 
             // Configure circuit files for browser compatibility
@@ -102,7 +106,7 @@ class CipherPayService {
             console.log('Creating SDK instance with config:', JSON.stringify(sdkConfig, null, 2));
             console.log('Program ID in sdkConfig:', sdkConfig.programId);
 
-            this.sdk = new CipherPaySDK(sdkConfig);
+            this.sdk = new sdkClass(sdkConfig);
 
             // Event monitoring is now handled via SSE in startEventMonitoring()
             console.log('SDK initialized. Call startEventMonitoring(recipientKey) to monitor on-chain events.');

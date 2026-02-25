@@ -64,6 +64,8 @@ async function buildBrowser() {
     SDKClass.commitmentOf = __SDK_EXPORTS__.commitmentOf;
     SDKClass.poseidonHash = __SDK_EXPORTS__.poseidonHash;
     SDKClass.poseidonHashForAuth = __SDK_EXPORTS__.poseidonHashForAuth;
+    SDKClass.getAuthPubKeyFromPrivKey = __SDK_EXPORTS__.getAuthPubKeyFromPrivKey;
+    SDKClass.signBabyJubPoseidon = __SDK_EXPORTS__.signBabyJubPoseidon;
     SDKClass.deposit = __SDK_EXPORTS__.deposit;
     SDKClass.transfer = __SDK_EXPORTS__.transfer;
     SDKClass.approveRelayerDelegate = __SDK_EXPORTS__.approveRelayerDelegate;

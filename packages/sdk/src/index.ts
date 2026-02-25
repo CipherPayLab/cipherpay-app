@@ -12,6 +12,11 @@ export type { SDKConfig } from "./sdk.js";
 export { TOKENS } from "./config/assets.js";
 export { bigintifySignals } from "./utils/zk.js";
 export { poseidonHash, poseidonHashForAuth } from "./crypto/poseidon.js";
+export {
+  getAuthPubKeyFromPrivKey,
+  signBabyJubPoseidon,
+} from "./crypto/authEddsa.js";
+export type { AuthPubKey, BabyJubSignature } from "./crypto/authEddsa.js";
 export { commitmentOf } from "./notes/commitment.js";
 
 // Note encryption exports

@@ -27,8 +27,10 @@ const getNetwork = () => {
 };
 
 // Get RPC endpoint from environment or use default
+// Production: devnet (public RPC). Development: localhost for local validator.
 const getRpcEndpoint = () => {
-    return import.meta.env.VITE_SOLANA_RPC_URL || 'http://127.0.0.1:8899';
+    return import.meta.env.VITE_SOLANA_RPC_URL || import.meta.env.VITE_RPC_URL
+        || (import.meta.env.PROD ? 'https://api.devnet.solana.com' : 'http://127.0.0.1:8899');
 };
 
 export function WalletProvider({ children }) {

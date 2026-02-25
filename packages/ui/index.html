@@ -7,33 +7,27 @@
   <meta name="theme-color" content="#000000" />
   <meta name="description" content="CipherPay UI" />
   <title>CipherPay</title>
-  <!-- Browser polyfills - must be available before SDK bundle loads -->
+  <!-- Browser polyfills - must run before any app chunk; Vite define replaces process/module with these -->
   <script>
     (function() {
-      // Process polyfill
-      if (typeof process === 'undefined') {
-        window.process = {
-          env: {
-            NODE_ENV: 'production'
-          },
+      if (typeof globalThis.process === 'undefined') {
+        globalThis.process = {
+          env: { NODE_ENV: 'production', NODE_DEBUG: undefined },
           browser: true,
           version: '',
           versions: {},
-          nextTick: function(fn) {
-            setTimeout(fn, 0);
-          },
-          cwd: function() {
-            return '/';
-          },
-          exit: function(code) {
-            throw new Error('process.exit called with code ' + code);
-          }
+          nextTick: function(fn) { setTimeout(fn, 0); },
+          cwd: function() { return '/'; },
+          exit: function(code) { throw new Error('process.exit called with code ' + code); }
         };
+      }
+      if (typeof globalThis.module === 'undefined') {
+        globalThis.module = { exports: {} };
       }
     })();
   </script>
-  <!-- Load CipherPay SDK bundle - includes Buffer and other polyfills -->
-  <script src="/sdk/cipherpay-sdk.browser.js"></script>
+  <!-- Load CipherPay SDK bundle - includes Buffer and other polyfills. ?v=2 cache-busts for auth fix (getAuthPubKeyFromPrivKey) -->
+  <script src="/sdk/cipherpay-sdk.browser.js?v=2"></script>
   <!-- Verify Buffer is loaded -->
   <script>
     if (typeof Buffer !== 'undefined' && Buffer.prototype.writeUInt32BE) {

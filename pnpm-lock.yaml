@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  eventemitter3: 4.0.7
+
 importers:
 
   .:
@@ -964,7 +967,7 @@ packages:
     resolution: {integrity: sha512-NefPzPlrJ9w+NWVe06P+sHZQU98E1AEU9vhiHJEVT2wEcNBC1YX6hON9+smrfbn86C4U1pb2zbvjhkF+n/LKBw==}
     dependencies:
       '@ethereumjs/util': 10.1.1
-      eventemitter3: 5.0.4
+      eventemitter3: 4.0.7
     dev: false
 
   /@ethereumjs/rlp@10.1.1:
@@ -3505,7 +3508,7 @@ packages:
       '@solana/web3.js': 1.98.4(typescript@5.9.3)
       '@wallet-standard/base': 1.1.0
       '@wallet-standard/features': 1.1.0
-      eventemitter3: 5.0.4
+      eventemitter3: 4.0.7
     dev: false
 
   /@solana/wallet-adapter-bitkeep@0.3.24(@solana/web3.js@1.98.4):
@@ -4188,7 +4191,7 @@ packages:
       '@solana/web3.js': 1.98.4(typescript@5.9.3)
       '@wallet-standard/base': 1.1.0
       bs58: 5.0.0
-      eventemitter3: 5.0.4
+      eventemitter3: 4.0.7
       uuid: 9.0.1
     dev: false
 
@@ -4199,7 +4202,7 @@ packages:
     dependencies:
       '@solana/web3.js': 1.98.4(typescript@5.9.3)
       bs58: 5.0.0
-      eventemitter3: 5.0.4
+      eventemitter3: 4.0.7
       uuid: 9.0.1
     dev: false
 
@@ -5495,7 +5498,7 @@ packages:
     engines: {node: '>=16.0.0'}
     dependencies:
       '@noble/hashes': 1.8.0
-      eventemitter3: 5.0.1
+      eventemitter3: 4.0.7
       ws: 8.19.0(bufferutil@4.1.0)(utf-8-validate@5.0.10)
     transitivePeerDependencies:
       - bufferutil
@@ -7010,14 +7013,6 @@ packages:
 
   /eventemitter3@4.0.7:
     resolution: {integrity: sha512-8guHBZCwKnFhYdHr2ysuRWErTwhoN2X8XELRlrRwpmfeY2jjuUN4taQMsULKUVo1K4DvZl+0pgfyoysHxvmvEw==}
-    dev: false
-
-  /eventemitter3@5.0.1:
-    resolution: {integrity: sha512-GWkBvjiSZK87ELrYOSESUYeVIc9mvLLf/nXalMOS5dYrgZq9o5OVkbZAVM06CVxYsCwH9BDZFPlQTlPA1j4ahA==}
-    dev: false
-
-  /eventemitter3@5.0.4:
-    resolution: {integrity: sha512-mlsTRyGaPBjPedk6Bvw+aqbsXDtoAyAzm5MO7JgU+yVRyMQ5O8bD4Kcci7BS85f93veegeCPkL8R4GLClnjLFw==}
 
   /events@3.3.0:
     resolution: {integrity: sha512-mQw+2fkQbALzQ7V0MY0IqdnXNOeTtP4r0lN9z7AAawCXgqea7bDii20AYrIBrFd/Hx0M2Ocz6S111CaFkUcb0Q==}
@@ -8729,7 +8724,7 @@ packages:
       '@scure/bip32': 1.7.0
       '@scure/bip39': 1.6.0
       abitype: 1.2.3(typescript@5.9.3)(zod@3.22.4)
-      eventemitter3: 5.0.1
+      eventemitter3: 4.0.7
       typescript: 5.9.3
     transitivePeerDependencies:
       - zod
@@ -8749,7 +8744,7 @@ packages:
       '@scure/bip32': 1.6.2
       '@scure/bip39': 1.5.4
       abitype: 1.0.8(typescript@5.9.3)
-      eventemitter3: 5.0.1
+      eventemitter3: 4.0.7
       typescript: 5.9.3
     transitivePeerDependencies:
       - zod
@@ -9565,7 +9560,7 @@ packages:
       '@types/uuid': 8.3.4
       '@types/ws': 8.18.1
       buffer: 6.0.3
-      eventemitter3: 5.0.4
+      eventemitter3: 4.0.7
       uuid: 8.3.2
       ws: 8.19.0(bufferutil@4.1.0)(utf-8-validate@5.0.10)
     optionalDependencies:
@@ -10782,7 +10777,7 @@ packages:
       '@xrplf/isomorphic': 1.0.1
       '@xrplf/secret-numbers': 2.0.0
       bignumber.js: 9.3.1
-      eventemitter3: 5.0.4
+      eventemitter3: 4.0.7
       fast-json-stable-stringify: 2.1.0
       ripple-address-codec: 5.0.0
       ripple-binary-codec: 2.7.0

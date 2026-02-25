@@ -1,8 +1,8 @@
 // Auth Service - Handles authentication with cipherpay-server
 import axios from 'axios';
-import { poseidonHash, poseidonHashForAuth } from '../lib/sdk';
-// Use empty string in dev to use Vite proxy (same-origin), or explicit URL in production
-const SERVER_URL = import.meta.env.VITE_SERVER_URL || (import.meta.env.DEV ? '' : 'http://localhost:8788');
+import { poseidonHash, poseidonHashForAuth, getAuthPubKeyFromPrivKey as sdkGetAuthPubKey, signBabyJubPoseidon as sdkSignBabyJub } from '../lib/sdk';
+// Same-origin (empty string) when VITE_SERVER_URL not set; otherwise use explicit API URL
+const SERVER_URL = (import.meta.env.VITE_SERVER_URL && String(import.meta.env.VITE_SERVER_URL).trim()) || '';
 
 // Debug logging to verify new code is loaded - UPDATED 2025-01-08 01:17
 console.log('[AuthService] Module loaded - SERVER_URL:', SERVER_URL);
@@ -102,6 +102,16 @@ function normalizeIdentityKeys(identity) {
 let circomlib = null;
 let babyJub = null;
 let eddsa = null;
+
+function clearCircomlibCache() {
+  circomlib = null;
+  babyJub = null;
+  eddsa = null;
+  if (typeof globalThis !== 'undefined' && globalThis.curve_bn128) {
+    globalThis.curve_bn128 = null;
+  }
+  console.log('[AuthService] Cleared circomlib cache (will reload on next use)');
+}
 
 async function loadCircomlib() {
   if (circomlib && babyJub && eddsa) return { babyJub, eddsa, circomlib };
@@ -507,34 +517,36 @@ class AuthService {
   }
 
   async signBabyJub(messageField, privKey) {
+    const privKeyBI = toBigIntFlexible(privKey);
+    const msgFieldBI = toBigIntFlexible(messageField);
+
+    // Prefer SDK (uses bundled circomlib - works in production). Fall back to UI's circomlib for old SDK.
+    try {
+      const sig = await sdkSignBabyJub(privKeyBI, msgFieldBI);
+      console.log('[AuthService] signBabyJub - result (via SDK)');
+      return sig;
+    } catch (sdkErr) {
+      console.warn('[AuthService] SDK signBabyJub not available, using circomlib fallback:', sdkErr?.message);
+    }
+
     const { babyJub, eddsa } = await loadCircomlib();
     if (!babyJub || !babyJub.F) throw new Error('babyJub.F is not available.');
     const F = babyJub.F;
-    
-    const privKeyBI = toBigIntFlexible(privKey);
-    const msgFieldBI = toBigIntFlexible(messageField);
     const msgField = F.e(msgFieldBI);
-    
-    console.log('[AuthService] signBabyJub - Using consistent bytes format');
-    
-    // Convert BigInt to 32-byte buffer (little-endian) - MUST match getAuthPubKey
+
+    console.log('[AuthService] signBabyJub - Using consistent bytes format (circomlib fallback)');
+
     const privKeyBytes = this.bigIntToBytes32LE(privKeyBI);
-    
-    // Sign using bytes
     const signature = eddsa.signPoseidon(privKeyBytes, msgField);
-    
-    // Verify locally using same bytes format
+
     const pk = eddsa.prv2pub(privKeyBytes);
     const ok = eddsa.verifyPoseidon(msgField, signature, pk);
-    
     if (!ok) {
       console.error('[AuthService] signBabyJub - Local verification FAILED!');
       throw new Error('local_bad_signature');
     }
-    
     console.log('[AuthService] signBabyJub - Local verification passed!');
-    
-    // Convert signature components to hex
+
     const r8xObj = F.toObject(signature.R8[0]);
     const r8yObj = F.toObject(signature.R8[1]);
     let sBI = signature.S;
@@ -552,10 +564,10 @@ class AuthService {
         }
       }
     }
-    
+
     const r8xBI = typeof r8xObj === 'bigint' ? r8xObj : BigInt(String(r8xObj));
     const r8yBI = typeof r8yObj === 'bigint' ? r8yObj : BigInt(String(r8yObj));
-    
+
     return {
       R8x: '0x' + r8xBI.toString(16).padStart(64, '0'),
       R8y: '0x' + r8yBI.toString(16).padStart(64, '0'),
@@ -633,25 +645,43 @@ class AuthService {
 
   async getAuthPubKey(identity) {
     if (!identity) identity = await this.getOrCreateIdentity();
-    const { babyJub, eddsa } = await loadCircomlib();
-    const F = babyJub.F;
-
     identity = normalizeIdentityKeys(identity);
     const skBI = toBigIntFlexible(identity.keypair.privKey);
-    
-    // Convert BigInt to 32-byte buffer (little-endian) - MUST match signBabyJub
+
+    // Prefer SDK (uses bundled circomlib - works in production). Fall back to UI's circomlib for old SDK.
+    try {
+      const result = await sdkGetAuthPubKey(skBI);
+      console.log('[AuthService] getAuthPubKey - result (via SDK):', result);
+      return result;
+    } catch (sdkErr) {
+      console.warn('[AuthService] SDK getAuthPubKey not available, using circomlib fallback:', sdkErr?.message);
+    }
+
     const privKeyBytes = this.bigIntToBytes32LE(skBI);
-    
-    // Derive public key using bytes format (matches what signPoseidon uses internally)
-    const pk = eddsa.prv2pub(privKeyBytes);
-    
-    // pk coordinates are either Uint8Arrays or field elements
-    // Convert to BigInt for hex representation
-    const x = '0x' + F.toObject(pk[0]).toString(16).padStart(64, '0');
-    const y = '0x' + F.toObject(pk[1]).toString(16).padStart(64, '0');
-    
-    console.log('[AuthService] getAuthPubKey - result:', { x, y });
-    return { x, y };
+    const doGetAuthPubKey = async () => {
+      const { babyJub, eddsa } = await loadCircomlib();
+      const F = babyJub.F;
+      const pk = eddsa.prv2pub(privKeyBytes);
+      const x = '0x' + F.toObject(pk[0]).toString(16).padStart(64, '0');
+      const y = '0x' + F.toObject(pk[1]).toString(16).padStart(64, '0');
+      return { x, y };
+    };
+
+    try {
+      const result = await doGetAuthPubKey();
+      console.log('[AuthService] getAuthPubKey - result (via circomlib):', result);
+      return result;
+    } catch (e) {
+      const isReadyError = e?.message?.includes?.('ready') && e?.message?.includes?.('not a function');
+      if (isReadyError) {
+        console.warn('[AuthService] getAuthPubKey failed with circomlib init error, clearing cache and retrying:', e.message);
+        clearCircomlibCache();
+        const result = await doGetAuthPubKey();
+        console.log('[AuthService] getAuthPubKey - result (after retry):', result);
+        return result;
+      }
+      throw e;
+    }
   }
 
   async requestChallenge(ownerKey, authPubKey, solanaWalletAddress = null, noteEncPubKey = null, username = null) {
@@ -836,6 +866,13 @@ class AuthService {
       console.log('[AuthService] Will send to backend:', !!solanaWalletAddress);
       console.log('[AuthService] ====== END WALLET ADDRESS DEBUG ======');
 
+      // Preload circomlib early to avoid init races in production (e.g. ge.ready errors)
+      try {
+        await loadCircomlib();
+      } catch (e) {
+        console.warn('[AuthService] circomlib preload failed:', e?.message);
+      }
+
       // Get wallet adapter from solanaWallet parameter
       const walletAdapter = solanaWallet?.adapter || solanaWallet;
       
@@ -881,8 +918,36 @@ class AuthService {
       console.log('[AuthService] Auth pub key retrieved:', authPubKey);
       console.log('[AuthService] Note encryption public key (Curve25519, base64):', noteEncPubKey ? noteEncPubKey.substring(0, 20) + '...' : 'MISSING');
       
+      // If Curve25519 key is missing (e.g. identity from cache/serialization or production bundle), derive from normalizedSeed
+      if (!noteEncPubKey && this.identity && this.identity.normalizedSeed) {
+        try {
+          const { deriveCurve25519KeypairFromSeed } = await import('../lib/e2ee');
+          const seed = BigInt(this.identity.normalizedSeed);
+          const kp = deriveCurve25519KeypairFromSeed(seed);
+          noteEncPubKey = kp.publicKeyB64;
+          this.identity.curve25519EncPubKey = noteEncPubKey;
+          console.log('[AuthService] Derived Curve25519 key from normalizedSeed (fallback)');
+        } catch (e) {
+          console.warn('[AuthService] Fallback Curve25519 derivation failed:', e);
+        }
+      }
+      
       if (!noteEncPubKey) {
         throw new Error('Curve25519 encryption public key not found in identity. Please re-authenticate.');
+      }
+
+      // New users require authPubKey (BabyJub public key); server returns 400 if missing
+      const authPubKeyValid = authPubKey && typeof authPubKey.x === 'string' && typeof authPubKey.y === 'string';
+      if (username && !authPubKeyValid) {
+        try {
+          authPubKey = await this.getAuthPubKey(this.identity);
+          if (!authPubKey || typeof authPubKey.x !== 'string' || typeof authPubKey.y !== 'string') {
+            throw new Error('Auth public key could not be derived. Try clearing site data and signing in again.');
+          }
+        } catch (e) {
+          console.error('[AuthService] getAuthPubKey retry failed:', e);
+          throw new Error('Auth public key could not be derived. Try clearing site data and signing in again.');
+        }
       }
 
       const { nonce } = await this.requestChallenge(ownerKey, authPubKey, solanaWalletAddress, noteEncPubKey, username);
@@ -1005,15 +1070,19 @@ class AuthService {
     try {
       const response = await axios.get(`${SERVER_URL}/api/v1/users/username/available`, {
         params: { username },
-        timeout: 10000,
+        timeout: 15000,
       });
       return response.data;
     } catch (error) {
+      const isTimeout = error.code === 'ECONNABORTED' || (error.message && String(error.message).includes('timeout'));
+      const message = isTimeout
+        ? 'Connection timed out. Check your connection and try again.'
+        : 'Failed to check username availability';
       console.error('[AuthService] Username availability check failed:', error);
       return {
         available: false,
         valid: false,
-        error: 'Failed to check username availability'
+        error: message
       };
     }
   }
@@ -1028,7 +1097,7 @@ class AuthService {
       const response = await axios.post(`${SERVER_URL}/api/v1/users/lookup`, {
         username,
       }, {
-        timeout: 10000,
+        timeout: 15000,
       });
       return response.data;
     } catch (error) {
@@ -1039,9 +1108,10 @@ class AuthService {
           error: `User @${username} not found`
         };
       }
+      const isTimeout = error.code === 'ECONNABORTED' || (error.message && String(error.message).includes('timeout'));
       return {
         success: false,
-        error: 'Failed to lookup user'
+        error: isTimeout ? 'Connection timed out. Check your connection and try again.' : 'Failed to lookup user'
       };
     }
   }
