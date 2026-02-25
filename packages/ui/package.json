@@ -28,6 +28,7 @@
   },
   "scripts": {
     "dev": "vite",
+    "prebuild": "pnpm --filter @cipherpay/sdk build:browser && cp ../sdk/dist/browser/cipherpay-sdk.browser.js public/sdk/",
     "build": "vite build",
     "preview": "vite preview",
     "test": "echo \"Error: no test specified\" && exit 1",

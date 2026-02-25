@@ -6,6 +6,8 @@ type SDKShape = {
   bigintifySignals: (s: Record<string, unknown>) => Record<string, bigint>;
   poseidonHash: (inputs: Array<bigint | number | string>) => Promise<bigint>;
   poseidonHashForAuth: (inputs: Array<bigint | number | string>) => Promise<bigint>;
+  getAuthPubKeyFromPrivKey?: (privKey: bigint) => Promise<{ x: string; y: string }>;
+  signBabyJubPoseidon?: (privKey: bigint, msgField: bigint) => Promise<{ R8x: string; R8y: string; S: string }>;
   commitmentOf: (
     input:
       | Array<bigint | number | string>
@@ -186,4 +188,25 @@ export async function poseidonHashForAuth(inputs: Array<bigint | number | string
   return await sdk.poseidonHashForAuth(sanitizedInputs);
 }
 
+export async function getAuthPubKeyFromPrivKey(privKey: bigint): Promise<{ x: string; y: string }> {
+  const sdk = await getSDK();
+  if (sdk?.getAuthPubKeyFromPrivKey && typeof sdk.getAuthPubKeyFromPrivKey === "function") {
+    return sdk.getAuthPubKeyFromPrivKey(privKey);
+  }
+  throw new Error(
+    "getAuthPubKeyFromPrivKey not available on CipherPaySDK. Update the SDK bundle."
+  );
+}
 
+export async function signBabyJubPoseidon(
+  privKey: bigint,
+  msgField: bigint
+): Promise<{ R8x: string; R8y: string; S: string }> {
+  const sdk = await getSDK();
+  if (sdk?.signBabyJubPoseidon && typeof sdk.signBabyJubPoseidon === "function") {
+    return sdk.signBabyJubPoseidon(privKey, msgField);
+  }
+  throw new Error(
+    "signBabyJubPoseidon not available on CipherPaySDK. Update the SDK bundle."
+  );
+}

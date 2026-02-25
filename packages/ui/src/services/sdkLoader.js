@@ -8,11 +8,13 @@ export async function loadSDK() {
     if (sdkInitPromise) return sdkInitPromise;
 
     sdkInitPromise = (async () => {
-        // Check if we're in a browser environment and if the SDK should be used
+        // Use real SDK when: VITE_USE_REAL_SDK=true, or production build (unless explicitly false)
+        const useRealSDK = import.meta.env.VITE_USE_REAL_SDK === 'true' ||
+            (import.meta.env.PROD && import.meta.env.VITE_USE_REAL_SDK !== 'false');
         console.log('🔍 SDK Loader: Checking environment...');
-        console.log('VITE_USE_REAL_SDK:', import.meta.env.VITE_USE_REAL_SDK);
+        console.log('VITE_USE_REAL_SDK:', import.meta.env.VITE_USE_REAL_SDK, 'PROD:', import.meta.env.PROD, 'useRealSDK:', useRealSDK);
 
-        if (import.meta.env.VITE_USE_REAL_SDK !== 'true') {
+        if (!useRealSDK) {
             console.log('❌ Real SDK disabled, using mock components');
             sdkInitialized = false;
             ChainType = { ethereum: 'ethereum', solana: 'solana' };

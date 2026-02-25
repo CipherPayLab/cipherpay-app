@@ -1,20 +1,44 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import { resolve } from 'path';
+import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { createRequire } from 'module';
 import { Buffer } from 'buffer';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
+const require = createRequire(import.meta.url);
+const eventemitter3Pkg = require.resolve('eventemitter3/package.json');
+const eventemitter3Index = resolve(dirname(eventemitter3Pkg), 'index.js');
 
-// Plugin to handle CommonJS modules that don't have default exports
+// Plugin to handle CommonJS modules that don't have default/named exports for ESM.
+// We only append ESM exports to the same CJS value (module.exports); runtime behavior is unchanged.
 const commonjsPlugin = () => ({
   name: 'commonjs-default-export',
   transform(code, id) {
-    // Transform CommonJS module.exports to ES module default export for blake2b
-    if (id.includes('blake2b') && code.includes('module.exports') && !code.includes('export default')) {
-      // Add export default for CommonJS modules
-      const transformed = code + '\nexport default module.exports;';
-      return { code: transformed, map: null };
+    if (!code.includes('module.exports') || code.includes('export default')) return null;
+    // blake2b
+    if (id.includes('blake2b')) {
+      return { code: code + '\nexport default module.exports;', map: null };
+    }
+    // eventemitter3 - only add default export (shim re-exports as EventEmitter); two export lines broke esbuild
+    if (id.replace(/\\/g, '/').includes('eventemitter3/index.js')) {
+      return { code: code + '\nexport default module.exports;', map: null };
+    }
+    // fast-deep-equal - used by @toruslabs/solana-embed as "dequal"
+    if (id.includes('fast-deep-equal')) {
+      return { code: code + '\nexport default module.exports;\nexport const dequal = module.exports;', map: null };
+    }
+    // sdp - CJS default export for webrtc-adapter
+    if (id.replace(/\\/g, '/').includes('sdp/sdp.js')) {
+      return { code: code + '\nexport default module.exports;', map: null };
+    }
+    // js-sha3 - CJS default for @ethersproject/keccak256
+    if (id.replace(/\\/g, '/').includes('js-sha3')) {
+      return { code: code + '\nexport default module.exports;', map: null };
+    }
+    // bech32 - CJS default for @ethersproject/providers
+    if (id.replace(/\\/g, '/').includes('bech32/index.js')) {
+      return { code: code + '\nexport default module.exports;', map: null };
     }
     return null;
   },
@@ -46,6 +70,10 @@ export default defineConfig({
       events: 'events',
       util: 'util',
       stream: 'stream-browserify',
+      // Shim so both default and named { EventEmitter } imports resolve (e.g. rpc-websockets)
+      'eventemitter3': resolve(__dirname, './src/lib/eventemitter3-shim.js'),
+      // Real package path for shim to import (avoids alias loop)
+      'eventemitter3-real': eventemitter3Index,
     },
     extensions: ['.ts', '.tsx', '.jsx', '.js', '.json'],
     // Handle CommonJS modules better
@@ -53,11 +81,15 @@ export default defineConfig({
   },
   define: {
     'global': 'globalThis',
-    'process.env': 'import.meta.env',
+    // Deps (circomlibjs) read process.env.NODE_DEBUG; use global polyfill. Do NOT replace process.env with import.meta.env.
+    'process': 'globalThis.process',
     'globalThis.Buffer': 'Buffer',
   },
   optimizeDeps: {
     esbuildOptions: {
+      define: {
+        'process': 'globalThis.process',
+      },
       loader: {
         '.js': 'jsx', // Critical: Tell esbuild to treat .js files as JSX
         '.jsx': 'jsx', // Ensure JSX files are handled
@@ -70,7 +102,7 @@ export default defineConfig({
       format: 'esm',
     },
     exclude: ['cipherpay-sdk'], // SDK is loaded via browser bundle
-    include: ['buffer', 'assert', 'events', 'util', 'stream-browserify', 'blake2b', 'circomlibjs'],
+    include: ['buffer', 'assert', 'events', 'util', 'stream-browserify', 'blake2b', 'circomlibjs', 'eventemitter3'],
     force: true, // Force re-optimization to handle blake2b
   },
   ssr: {
@@ -92,61 +124,9 @@ export default defineConfig({
     },
     rollupOptions: {
       output: {
-        manualChunks: (id) => {
-          // Only process node_modules
-          if (!id.includes('node_modules')) {
-            return;
-          }
-          
-          // Split React Router first (more specific, must check before 'react')
-          if (id.includes('react-router')) {
-            return 'react-router';
-          }
-          
-          // Split Solana wallet adapters into their own chunk
-          if (id.includes('@solana/wallet-adapter')) {
-            return 'solana-wallet';
-          }
-          
-          // Split Solana web3.js into its own chunk
-          if (id.includes('@solana/web3.js') || id.includes('@solana/spl-token')) {
-            return 'solana-web3';
-          }
-          
-          // Split React and React DOM into their own chunk (check after react-router)
-          if (id.includes('/react/') || id.includes('/react-dom/') || id.includes('/scheduler/') || 
-              id.endsWith('/react') || id.endsWith('/react-dom') || id.endsWith('/scheduler')) {
-            return 'react-vendor';
-          }
-          
-          // Split wallet connect and related packages (check before other crypto)
-          if (id.includes('@walletconnect') || id.includes('@reown/appkit') || id.includes('@reown/appkit-controllers')) {
-            return 'wallet-connect';
-          }
-          
-          // Split circomlibjs into its own chunk (it's very large ~2.5MB)
-          if (id.includes('circomlibjs')) {
-            return 'circomlibjs';
-          }
-          
-          // Split other crypto-related libraries
-          if (id.includes('@toruslabs/eccrypto') || id.includes('snarkjs')) {
-            return 'crypto-libs';
-          }
-          
-          // Split large UI libraries
-          if (id.includes('@solana/wallet-adapter-react-ui') || id.includes('tailwindcss')) {
-            return 'ui-libs';
-          }
-          
-          // Split utility libraries
-          if (id.includes('axios') || id.includes('buffer') || id.includes('assert') || id.includes('events') || id.includes('util') || id.includes('stream')) {
-            return 'utils';
-          }
-          
-          // Everything else from node_modules goes to vendor
-          return 'vendor';
-        },
+        // Disable manualChunks to avoid "Cannot access 'X' before initialization" (TDZ)
+        // errors from chunk load order. Rollup's default chunking preserves init order.
+        manualChunks: undefined,
       },
     },
   },
