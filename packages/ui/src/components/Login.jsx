@@ -350,7 +350,7 @@ function Login() {
                   required={isNewUser}
                   minLength={3}
                   maxLength={32}
-                  pattern="[a-zA-Z0-9_-]+"
+                  pattern="[-a-zA-Z0-9_]+"
                 />
                 <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
                   {checkingUsername && (
