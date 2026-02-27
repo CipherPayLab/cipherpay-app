@@ -7,6 +7,7 @@ import SolanaStatus from './SolanaStatus';
 import SDKStatus from './SDKStatus';
 import authService from '../services/authService';
 import { decryptFromSenderForMe } from '../lib/e2ee';
+import { parseFriendlyErrorMessage } from '../utils/errorMessages';
 
 function Dashboard() {
   const navigate = useNavigate();
@@ -31,7 +32,8 @@ function Dashboard() {
     checkRelayerDelegateApproved,
     createTransfer,
     getWithdrawableNotes,
-    createWithdraw
+    createWithdraw,
+    clearError
   } = useCipherPay();
 
   const [actionLoading, setActionLoading] = useState(false);
@@ -54,6 +56,8 @@ function Dashboard() {
   const [ataBalance, setAtaBalance] = useState(0);
   const [showNotesModal, setShowNotesModal] = useState(false);
   const [showDestroyAtaModal, setShowDestroyAtaModal] = useState(false);
+  const [showErrorModal, setShowErrorModal] = useState(false);
+  const [errorModalContent, setErrorModalContent] = useState({ title: '', message: '' });
   const [selectedNoteType, setSelectedNoteType] = useState(null); // 'spendable' or 'all'
   const [recentActivities, setRecentActivities] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
@@ -539,7 +543,12 @@ function Dashboard() {
       alert(`Delegate approved! You can now make deposits. Transaction: ${result?.signature || 'success'}`);
     } catch (err) {
       console.error('[Dashboard] Failed to approve delegate:', err);
-      alert(`Delegate approval failed: ${err.message || 'Unknown error'}`);
+      clearError();
+      setErrorModalContent({
+        title: 'Approval Failed',
+        message: parseFriendlyErrorMessage(err?.message || 'Unknown error')
+      });
+      setShowErrorModal(true);
     } finally {
       setActionLoading(false);
     }
@@ -587,7 +596,12 @@ function Dashboard() {
       alert(`Deposit successful! Transaction: ${result?.txHash || result?.signature || 'pending'}`);
     } catch (err) {
       console.error('[Dashboard] Failed to deposit:', err);
-      alert(`Deposit failed: ${err.message || 'Unknown error'}`);
+      clearError();
+      setErrorModalContent({
+        title: 'Deposit Failed',
+        message: parseFriendlyErrorMessage(err?.message || 'Unknown error')
+      });
+      setShowErrorModal(true);
     } finally {
       setActionLoading(false);
     }
@@ -693,7 +707,12 @@ function Dashboard() {
       alert(`Transfer successful to ${recipientDisplay}! Transaction: ${txHash}`);
     } catch (err) {
       console.error('Failed to transfer:', err);
-      alert(`Transfer failed: ${err.message || 'Unknown error'}`);
+      clearError();
+      setErrorModalContent({
+        title: 'Transfer Failed',
+        message: parseFriendlyErrorMessage(err?.message || 'Unknown error')
+      });
+      setShowErrorModal(true);
     } finally {
       setActionLoading(false);
     }
@@ -731,7 +750,12 @@ function Dashboard() {
       }
     } catch (err) {
       console.error('Failed to get withdrawable notes:', err);
-      alert(`Failed to get withdrawable notes: ${err.message || 'Unknown error'}`);
+      clearError();
+      setErrorModalContent({
+        title: 'Error',
+        message: parseFriendlyErrorMessage(err?.message || 'Failed to load notes')
+      });
+      setShowErrorModal(true);
     } finally {
       setActionLoading(false);
     }
@@ -750,7 +774,12 @@ function Dashboard() {
       alert(`Withdraw successful! Amount: ${note.amountFormatted || (Number(note.amount) / 1e9).toFixed(9) + ' SOL'}\nTransaction: ${result.txHash || result.signature || 'pending'}`);
     } catch (err) {
       console.error('Failed to withdraw:', err);
-      alert(`Withdraw failed: ${err.message || 'Unknown error'}`);
+      clearError();
+      setErrorModalContent({
+        title: 'Withdraw Failed',
+        message: parseFriendlyErrorMessage(err?.message || 'Unknown error')
+      });
+      setShowErrorModal(true);
     } finally {
       setActionLoading(false);
     }
@@ -1500,6 +1529,40 @@ function Dashboard() {
                   >
                     {actionLoading ? 'Processing...' : 'Confirm'}
                   </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Error Modal - friendly display for action failures */}
+        {showErrorModal && (
+          <div 
+            className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center p-4"
+            onClick={() => { setShowErrorModal(false); setErrorModalContent({ title: '', message: '' }); }}
+          >
+            <div className="relative mx-auto max-w-md w-full bg-white rounded-lg shadow-xl p-6" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-start">
+                <div className="flex-shrink-0 flex items-center justify-center h-10 w-10 rounded-full bg-red-100">
+                  <svg className="h-5 w-5 text-red-600" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <div className="ml-4 flex-1">
+                  <h3 className="text-lg font-medium text-gray-900">{errorModalContent.title}</h3>
+                  <p className="mt-2 text-sm text-gray-600 whitespace-pre-wrap">{errorModalContent.message}</p>
+                  <div className="mt-6">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowErrorModal(false);
+                        setErrorModalContent({ title: '', message: '' });
+                      }}
+                      className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                    >
+                      OK
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

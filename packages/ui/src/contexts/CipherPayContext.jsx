@@ -3,6 +3,7 @@ import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { getAssociatedTokenAddressSync, NATIVE_MINT, TOKEN_PROGRAM_ID, createAssociatedTokenAccountInstruction, createSyncNativeInstruction, createCloseAccountInstruction } from '@solana/spl-token';
 import { SystemProgram, Transaction } from '@solana/web3.js';
 import cipherPayService from '../services';
+import { parseFriendlyErrorMessage } from '../utils/errorMessages';
 import authService from '../services/authService';
 
 const CipherPayContext = createContext();
@@ -626,26 +627,8 @@ export const CipherPayProvider = ({ children }) => {
             return result;
         } catch (err) {
             console.error('[CipherPayContext] createDeposit: Error:', err);
-            
-            // Provide clearer error messages
-            let errorMessage = err?.message || String(err);
-            
-            // Check for common wallet error patterns
-            if (errorMessage.includes('insufficient') || errorMessage.includes('balance') || errorMessage.includes('funds')) {
-                // Already has a clear message from our validation
-                errorMessage = err.message;
-            } else if (errorMessage.includes('User rejected') || errorMessage.includes('rejected')) {
-                errorMessage = 'Transaction was rejected by the wallet. Please try again.';
-            } else if (errorMessage.includes('Unexpected error') || errorMessage.includes('WalletSendTransactionError')) {
-                // Try to extract more details from the error
-                const errorDetails = err?.cause || err?.error || err;
-                if (errorDetails?.message) {
-                    errorMessage = `Wallet transaction failed: ${errorDetails.message}`;
-                } else {
-                    errorMessage = 'Wallet transaction failed. Please check your wallet balance and try again.';
-                }
-            }
-            
+            const rawMessage = err?.message || String(err);
+            const errorMessage = parseFriendlyErrorMessage(rawMessage);
             setError(errorMessage);
             throw new Error(errorMessage);
         } finally {
