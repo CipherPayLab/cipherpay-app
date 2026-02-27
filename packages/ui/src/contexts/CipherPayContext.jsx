@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
-import { getAssociatedTokenAddressSync, NATIVE_MINT, TOKEN_PROGRAM_ID, createAssociatedTokenAccountInstruction, createSyncNativeInstruction } from '@solana/spl-token';
+import { getAssociatedTokenAddressSync, NATIVE_MINT, TOKEN_PROGRAM_ID, createAssociatedTokenAccountInstruction, createSyncNativeInstruction, createCloseAccountInstruction } from '@solana/spl-token';
 import { SystemProgram, Transaction } from '@solana/web3.js';
 import cipherPayService from '../services';
 import authService from '../services/authService';
@@ -653,6 +653,57 @@ export const CipherPayProvider = ({ children }) => {
         }
     };
 
+    /**
+     * Destroy the wSOL ATA and move all wSOL back to the wallet as native SOL.
+     * Requires wallet connection. The ATA must exist and be owned by the wallet.
+     */
+    const destroyAta = useCallback(async () => {
+        try {
+            setLoading(true);
+            setError(null);
+
+            if (!solanaConnected || !solanaPublicKey) {
+                throw new Error('Please connect your Solana wallet first');
+            }
+
+            const wsolAta = getAssociatedTokenAddressSync(NATIVE_MINT, solanaPublicKey, false, TOKEN_PROGRAM_ID);
+            const ataInfo = await connection.getAccountInfo(wsolAta);
+
+            if (!ataInfo) {
+                throw new Error('No wSOL ATA found. Nothing to destroy.');
+            }
+
+            const tx = new Transaction();
+            tx.add(
+                createCloseAccountInstruction(
+                    wsolAta,
+                    solanaPublicKey,
+                    solanaPublicKey,
+                    [],
+                    TOKEN_PROGRAM_ID
+                )
+            );
+
+            const signature = await sendTransaction(tx, connection);
+            await connection.confirmTransaction(signature, 'confirmed');
+            console.log('[CipherPayContext] ATA closed, wSOL reclaimed to wallet:', signature);
+
+            await updateServiceStatus();
+            return { signature };
+        } catch (err) {
+            console.error('[CipherPayContext] destroyAta: Error:', err);
+            const errorMessage = err?.message || String(err);
+            if (errorMessage.includes('User rejected') || errorMessage.includes('rejected')) {
+                setError('Transaction was rejected by the wallet.');
+            } else {
+                setError(errorMessage);
+            }
+            throw err;
+        } finally {
+            setLoading(false);
+        }
+    }, [solanaConnected, solanaPublicKey, connection, sendTransaction, updateServiceStatus]);
+
     // Proof Management
     const generateProof = async (input) => {
         try {
@@ -1164,6 +1215,7 @@ export const CipherPayProvider = ({ children }) => {
         approveRelayerDelegate, // One-time setup before first deposit
         checkRelayerDelegateApproved, // On-chain check so we don't prompt every login
         createDeposit,
+        destroyAta, // Close wSOL ATA and reclaim SOL to wallet
 
         // Withdrawal Management
         getWithdrawableNotes,

@@ -26,6 +26,7 @@ function Dashboard() {
     signOut,
     refreshData,
     createDeposit,
+    destroyAta,
     approveRelayerDelegate,
     checkRelayerDelegateApproved,
     createTransfer,
@@ -52,6 +53,7 @@ function Dashboard() {
   const [copiedItem, setCopiedItem] = useState(null); // Track what was copied for feedback
   const [ataBalance, setAtaBalance] = useState(0);
   const [showNotesModal, setShowNotesModal] = useState(false);
+  const [showDestroyAtaModal, setShowDestroyAtaModal] = useState(false);
   const [selectedNoteType, setSelectedNoteType] = useState(null); // 'spendable' or 'all'
   const [recentActivities, setRecentActivities] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
@@ -886,8 +888,19 @@ function Dashboard() {
                   {formatBalance(walletBalance)} SOL
                 </dd>
               </div>
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <dt className="text-sm font-medium text-gray-500">User ATA Balance</dt>
+              <div className="bg-gray-50 p-4 rounded-lg flex flex-col">
+                <div className="flex items-center justify-between">
+                  <dt className="text-sm font-medium text-gray-500">User ATA Balance</dt>
+                  {ataBalance > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowDestroyAtaModal(true)}
+                      className="text-xs px-2 py-1 bg-amber-100 text-amber-800 rounded hover:bg-amber-200 transition-colors"
+                    >
+                      Destroy ATA
+                    </button>
+                  )}
+                </div>
                 <dd className="mt-1 text-3xl font-semibold text-gray-900">
                   {formatBalance(ataBalance)} SOL
                 </dd>
@@ -1438,6 +1451,54 @@ function Dashboard() {
                     className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {actionLoading ? 'Processing...' : 'Approve Delegate'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Destroy ATA Confirmation Modal */}
+        {showDestroyAtaModal && (
+          <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50" onClick={() => setShowDestroyAtaModal(false)}>
+            <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white" onClick={(e) => e.stopPropagation()}>
+              <div className="mt-3">
+                <h3 className="text-lg font-medium text-gray-900 mb-4">Destroy ATA &amp; Reclaim SOL</h3>
+                <p className="text-sm text-gray-600 mb-4">
+                  This will close your wSOL token account and move <strong>{formatBalance(ataBalance)} SOL</strong> to your wallet as native SOL. You will need to create a new ATA when you deposit again.
+                </p>
+                <p className="text-sm text-amber-600 mb-4">
+                  Are you sure you want to proceed?
+                </p>
+                <div className="flex justify-end space-x-3">
+                  <button
+                    onClick={() => setShowDestroyAtaModal(false)}
+                    className="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={async () => {
+                      try {
+                        setActionLoading(true);
+                        await destroyAta();
+                        setShowDestroyAtaModal(false);
+                        setError(null);
+                        // Refresh balances (ATA is now closed, SOL moved to wallet)
+                        setAtaBalance(0);
+                        const balance = await connection.getBalance(wallet.publicKey);
+                        setWalletBalance(balance);
+                        refreshData();
+                      } catch (err) {
+                        console.error('[Dashboard] destroyAta failed:', err);
+                      } finally {
+                        setActionLoading(false);
+                      }
+                    }}
+                    disabled={actionLoading}
+                    className="px-4 py-2 bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {actionLoading ? 'Processing...' : 'Confirm'}
                   </button>
                 </div>
               </div>
