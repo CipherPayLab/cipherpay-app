@@ -13,9 +13,9 @@ function SolanaStatus() {
     const isMountedRef = useRef(true);
 
     // Get server URL (backend server that proxies to relayer)
-    // Use empty string in dev to use Vite proxy (same-origin)
+    // Same as authService: empty string = same-origin (dev Vite proxy or prod single domain)
     const getServerUrl = () => {
-        return import.meta.env.VITE_SERVER_URL || (import.meta.env.DEV ? '' : 'http://localhost:8788');
+        return (import.meta.env.VITE_SERVER_URL && String(import.meta.env.VITE_SERVER_URL).trim()) || '';
     };
 
     const checkRelayerStatus = async () => {

@@ -27,6 +27,7 @@ function Dashboard() {
     refreshData,
     createDeposit,
     approveRelayerDelegate,
+    checkRelayerDelegateApproved,
     createTransfer,
     getWithdrawableNotes,
     createWithdraw
@@ -107,6 +108,31 @@ function Dashboard() {
       fetchRecentActivities();
     }
   }, [isAuthenticated, authUser]);
+
+  // Check on-chain if relayer delegate is already approved (so we don't prompt every login)
+  // Fallback: if user has shielded notes, they must have approved (deposits require it)
+  useEffect(() => {
+    const check = async () => {
+      if (!wallet.publicKey || !connection || !checkRelayerDelegateApproved) return;
+      try {
+        const approved = await checkRelayerDelegateApproved({
+          connection,
+          walletPublicKey: wallet.publicKey.toBase58(),
+        });
+        setIsDelegateApproved(approved);
+      } catch (err) {
+        console.warn('[Dashboard] checkRelayerDelegateApproved:', err?.message);
+      }
+    };
+    check();
+  }, [wallet.publicKey, connection, checkRelayerDelegateApproved]);
+
+  // Fallback: if user has shielded balance/notes, they've already approved (can't deposit without it)
+  useEffect(() => {
+    if ((spendableNotes?.length > 0 || allNotes?.length > 0) && !isDelegateApproved) {
+      setIsDelegateApproved(true);
+    }
+  }, [spendableNotes?.length, allNotes?.length, isDelegateApproved]);
 
   // Fetch wallet balance and ATA balance
   useEffect(() => {

@@ -3,8 +3,8 @@
 
 import { decryptFromSenderForMe, decryptAuditReceipt } from '../lib/e2ee';
 
-// Use empty string in dev to use Vite proxy (same-origin), or explicit URL in production
-const API_BASE_URL = import.meta.env.VITE_SERVER_URL || import.meta.env.VITE_API_URL || (import.meta.env.DEV ? '' : 'http://localhost:8788');
+// Same as authService: empty string = same-origin (dev Vite proxy or prod single domain)
+const API_BASE_URL = (import.meta.env.VITE_SERVER_URL && String(import.meta.env.VITE_SERVER_URL).trim()) || import.meta.env.VITE_API_URL || '';
 
 // Request deduplication: track in-flight requests
 const inFlightRequests = new Map();

@@ -117,7 +117,7 @@ function SDKStatus() {
             }
 
             const getServerUrl = () => {
-                return import.meta.env.VITE_SERVER_URL || (import.meta.env.DEV ? '' : 'http://localhost:8788');
+                return (import.meta.env.VITE_SERVER_URL && String(import.meta.env.VITE_SERVER_URL).trim()) || '';
             };
 
             const serverUrl = getServerUrl();

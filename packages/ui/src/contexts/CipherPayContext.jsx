@@ -464,6 +464,16 @@ export const CipherPayProvider = ({ children }) => {
         }
     };
 
+    // Check if relayer is already approved (reads on-chain, so we don't prompt every login)
+    const checkRelayerDelegateApproved = async (params) => {
+        try {
+            return await cipherPayService.checkRelayerDelegateApproved(params);
+        } catch (err) {
+            console.warn('[CipherPayContext] checkRelayerDelegateApproved:', err?.message);
+            return false;
+        }
+    };
+
     // Deposit Management (calls server APIs via SDK)
     const createDeposit = async (params) => {
         try {
@@ -1151,6 +1161,7 @@ export const CipherPayProvider = ({ children }) => {
 
         // Deposit Management
         approveRelayerDelegate, // One-time setup before first deposit
+        checkRelayerDelegateApproved, // On-chain check so we don't prompt every login
         createDeposit,
 
         // Withdrawal Management

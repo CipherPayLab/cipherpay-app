@@ -13,6 +13,9 @@
 // - Event monitoring and compliance
 // - Production-ready error handling
 
+// Same as authService: empty string = same-origin (dev Vite proxy or prod single domain)
+const getServerBaseUrl = () => (import.meta.env.VITE_SERVER_URL && String(import.meta.env.VITE_SERVER_URL).trim()) || '';
+
 // Import SDK loader to get the global SDK instance
 import { loadSDK, getSDKStatus } from './sdkLoader';
 import { fetchAccountOverview, fetchMessages, decryptMessages, computeAccountOverview } from './accountOverviewService';
@@ -29,7 +32,7 @@ class CipherPayService {
         this.config = {
             chainType: 'solana', // Use string instead of ChainType enum
             rpcUrl: import.meta.env.VITE_RPC_URL || import.meta.env.VITE_SOLANA_RPC_URL || (import.meta.env.PROD ? 'https://api.devnet.solana.com' : 'http://127.0.0.1:8899'),
-            relayerUrl: import.meta.env.VITE_RELAYER_URL || import.meta.env.VITE_SERVER_URL || 'http://localhost:8788',
+            relayerUrl: import.meta.env.VITE_RELAYER_URL || getServerBaseUrl(),
             relayerApiKey: import.meta.env.VITE_RELAYER_API_KEY,
             contractAddress: import.meta.env.VITE_CONTRACT_ADDRESS,
             programId: import.meta.env.VITE_PROGRAM_ID || '24gZSJMyGiAbaTcBEm9WZyfq9TvkJJDQWake7uNHvPKj', // Solana program ID
@@ -346,7 +349,7 @@ class CipherPayService {
             }
 
             // Validate: Recipient must exist in database and have valid keys
-            const serverUrl = import.meta.env.VITE_SERVER_URL || 'http://localhost:8788';
+            const serverUrl = getServerBaseUrl();
             const authToken = localStorage.getItem('cipherpay_token');
             
             // Helper function to validate owner_cipherpay_pub_key format
@@ -749,7 +752,7 @@ class CipherPayService {
 
             // Get auth token for server API calls
             const authToken = localStorage.getItem('cipherpay_token');
-            const serverUrl = import.meta.env.VITE_SERVER_URL || 'http://localhost:8788';
+            const serverUrl = getServerBaseUrl();
 
             // Determine token descriptor from input note (assume same token for outputs)
             // For now, assume wSOL (can be enhanced to support other tokens)
@@ -1260,13 +1263,17 @@ class CipherPayService {
                 throw new Error('SDK approveRelayerDelegate function not available. Ensure the SDK bundle is loaded.');
             }
 
-            // Get relayer public key from server
-            const serverUrl = import.meta.env.VITE_SERVER_URL || 'http://localhost:8788';
+            // Get relayer public key via server proxy (server reaches relayer at localhost; browser cannot)
+            const serverUrl = getServerBaseUrl();
             const response = await fetch(`${serverUrl}/api/relayer/info`);
             if (!response.ok) {
                 throw new Error(`Failed to get relayer info: ${response.status}`);
             }
-            const { relayerPubkey } = await response.json();
+            const info = await response.json();
+            const relayerPubkey = info?.relayerPubkey ?? info?.relayerPubKey;
+            if (!relayerPubkey) {
+                throw new Error('Relayer info missing relayerPubkey');
+            }
             console.log('[CipherPayService] Relayer pubkey:', relayerPubkey);
 
             // Import PublicKey
@@ -1290,6 +1297,65 @@ class CipherPayService {
         } catch (error) {
             console.error('[CipherPayService] Failed to approve relayer delegate:', error);
             throw error;
+        }
+    }
+
+    /**
+     * Check if the relayer is already approved as delegate for the user's wSOL token account.
+     * Reads on-chain state so we don't prompt for approval on every login.
+     * Uses manual buffer parsing to avoid spl-token getAccount BigInt conversion issues.
+     * @param {{ connection: Connection, walletPublicKey: string, tokenMint?: string }} params
+     * @returns {Promise<boolean>}
+     */
+    async checkRelayerDelegateApproved(params) {
+        try {
+            const { connection, walletPublicKey, tokenMint = 'So11111111111111111111111111111111111111112' } = params;
+            if (!connection || !walletPublicKey) return false;
+
+            const { PublicKey } = await import('@solana/web3.js');
+            const { getAssociatedTokenAddressSync } = await import('@solana/spl-token');
+
+            // Use server proxy for relayer info (server reaches relayer at localhost; browser cannot)
+            const serverUrl = getServerBaseUrl();
+            const response = await fetch(`${serverUrl}/api/relayer/info`);
+            if (!response.ok) return false;
+            const info = await response.json();
+            const relayerPubkey = info?.relayerPubkey ?? info?.relayerPubKey;
+            if (!relayerPubkey) {
+                console.warn('[CipherPayService] checkRelayerDelegateApproved: relayer info missing relayerPubkey');
+                return false;
+            }
+            console.log('[CipherPayService] checkRelayerDelegateApproved: relayer pubkey =', relayerPubkey);
+            const relayerPubKey = new PublicKey(relayerPubkey);
+
+            const userAta = getAssociatedTokenAddressSync(
+                new PublicKey(tokenMint),
+                new PublicKey(walletPublicKey)
+            );
+            const accountInfo = await connection.getAccountInfo(userAta);
+            if (!accountInfo || !accountInfo.data) return false;
+
+            const data = accountInfo.data;
+            if (data.length < 129) return false;
+
+            // SPL Token account layout: delegate COption at 72 (4 byte flag + 32 byte pubkey)
+            // delegated_amount u64 at 121 (8 bytes)
+            const delegateOption = data.readUInt32LE(72);
+            if (delegateOption !== 1) return false;
+
+            const delegateBytes = new Uint8Array(data.buffer, data.byteOffset + 76, 32);
+            const relayerBytes = relayerPubKey.toBytes();
+            const delegateMatches = delegateBytes.length === relayerBytes.length &&
+                delegateBytes.every((b, i) => b === relayerBytes[i]);
+
+            if (!delegateMatches) return false;
+
+            const view = new DataView(data.buffer, data.byteOffset + 121, 8);
+            const delegatedAmount = view.getBigUint64(0, true);
+            return delegatedAmount > 0n;
+        } catch (err) {
+            console.warn('[CipherPayService] checkRelayerDelegateApproved failed:', err?.message || err);
+            return false;
         }
     }
 
@@ -1330,7 +1396,7 @@ class CipherPayService {
             };
 
             // Get server URL (cipherpay-server, NOT relayer)
-            const serverUrl = import.meta.env.VITE_SERVER_URL || 'http://localhost:8788';
+            const serverUrl = getServerBaseUrl();
 
             // Prepare deposit parameters for SDK
             const depositParams = {
@@ -1403,7 +1469,7 @@ class CipherPayService {
                     const recipientKey = '0x' + note.ownerCipherPayPubKey.toString(16).padStart(64, '0');
                     
                     // Send encrypted message to backend with commitment_hex (stored in nullifier_hex field)
-                    const serverUrl = import.meta.env.VITE_SERVER_URL || 'http://localhost:8788';
+                    const serverUrl = getServerBaseUrl();
                     const messageResponse = await fetch(`${serverUrl}/api/v1/messages`, {
                         method: 'POST',
                         headers: {
@@ -1722,7 +1788,7 @@ class CipherPayService {
             const nullifierHex = nullifier.toString(16).padStart(64, '0');
             
             try {
-                const serverUrl = import.meta.env.VITE_SERVER_URL || 'http://localhost:8788';
+                const serverUrl = getServerBaseUrl();
                 const authToken = localStorage.getItem('cipherpay_token');
                 
                 // Get the user's encryption public key for encrypting the withdraw message
@@ -2064,7 +2130,7 @@ class CipherPayService {
         this.eventMonitoringActive = true;
 
         try {
-            const serverUrl = import.meta.env.VITE_SERVER_URL || 'http://localhost:8788';
+            const serverUrl = getServerBaseUrl();
             // EventSource doesn't support custom headers, so pass token as query param if needed
             const token = localStorage.getItem('cipherpay_token');
             const url = token 
