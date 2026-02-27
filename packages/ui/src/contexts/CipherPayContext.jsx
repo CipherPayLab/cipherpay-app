@@ -772,7 +772,8 @@ export const CipherPayProvider = ({ children }) => {
             await updateServiceStatus(); // Refresh balance and notes
             return result;
         } catch (err) {
-            setError(err.message);
+            const msg = err?.message || String(err);
+            setError(msg.includes('<!') || msg.includes('<html') ? 'The selected note could not be withdrawn. It may have already been spent - please refresh your notes and try again.' : msg);
             throw err;
         } finally {
             setLoading(false);

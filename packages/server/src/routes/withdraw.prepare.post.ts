@@ -26,10 +26,21 @@ export default async function (app: FastifyInstance) {
 
       if (!response.ok) {
         const text = await response.text();
+        let message = text;
+        try {
+          const errJson = JSON.parse(text);
+          message = errJson.message ?? errJson.error ?? text;
+        } catch {
+          /* text is not JSON (e.g. HTML from Express default error handler) */
+          message = text.includes("commitment not found") ? "commitment not found" : "The note could not be found. It may have already been spent.";
+        }
+        if (message.includes("<!") || message.includes("<html")) {
+          message = "The note could not be found. It may have already been spent.";
+        }
         return rep.status(response.status).send({
           ok: false,
           error: "RelayerError",
-          message: text,
+          message,
         });
       }
 

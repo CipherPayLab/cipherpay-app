@@ -16,6 +16,18 @@
 // Same as authService: empty string = same-origin (dev Vite proxy or prod single domain)
 const getServerBaseUrl = () => (import.meta.env.VITE_SERVER_URL && String(import.meta.env.VITE_SERVER_URL).trim()) || '';
 
+// Replace HTML or non-user-friendly error content with a clear message
+const sanitizeErrorMessage = (msg) => {
+    if (!msg || typeof msg !== 'string') return 'An unexpected error occurred.';
+    if (msg.includes('<!') || msg.includes('<html') || msg.includes('<body') || msg.includes('<pre>')) {
+        if (msg.includes('Internal Server Error') || msg.includes('500')) {
+            return 'The selected note could not be withdrawn. It may have already been spent - please refresh your notes and try again.';
+        }
+        return 'The operation failed. Please refresh and try again.';
+    }
+    return msg;
+};
+
 // Import SDK loader to get the global SDK instance
 import { loadSDK, getSDKStatus } from './sdkLoader';
 import { fetchAccountOverview, fetchMessages, decryptMessages, computeAccountOverview } from './accountOverviewService';
@@ -1769,7 +1781,12 @@ class CipherPayService {
 
             if (!prepareResponse.ok) {
                 const errorText = await prepareResponse.text();
-                throw new Error(`Failed to prepare withdraw: ${prepareResponse.status} ${errorText}`);
+                let userMessage = `Failed to prepare withdraw (${prepareResponse.status})`;
+                try {
+                    const err = JSON.parse(errorText);
+                    if (err?.message) userMessage = sanitizeErrorMessage(err.message);
+                } catch { /* ignore parse errors */ }
+                throw new Error(userMessage);
             }
 
             const prepareData = await prepareResponse.json();
@@ -1976,7 +1993,12 @@ class CipherPayService {
 
             if (!submitResponse.ok) {
                 const errorText = await submitResponse.text();
-                throw new Error(`Failed to submit withdraw: ${submitResponse.status} ${errorText}`);
+                let userMessage = `Failed to submit withdraw (${submitResponse.status})`;
+                try {
+                    const err = JSON.parse(errorText);
+                    if (err?.message) userMessage = sanitizeErrorMessage(err.message);
+                } catch { /* ignore parse errors */ }
+                throw new Error(userMessage);
             }
 
             const submitResult = await submitResponse.json();

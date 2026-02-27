@@ -37,10 +37,21 @@ export default async function (app: FastifyInstance) {
 
       if (!response.ok) {
         const text = await response.text();
+        let message = text;
+        try {
+          const errJson = JSON.parse(text);
+          message = errJson.message ?? errJson.error ?? text;
+        } catch {
+          /* text is not JSON (e.g. HTML), use friendly fallback */
+          message = "The withdraw failed. Please try again.";
+        }
+        if (message.includes("<!") || message.includes("<html")) {
+          message = "The withdraw failed. Please try again.";
+        }
         return rep.status(response.status).send({
           ok: false,
           error: "RelayerError",
-          message: text,
+          message,
         });
       }
 
