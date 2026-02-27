@@ -47,6 +47,7 @@ function Dashboard() {
   const [withdrawableNotes, setWithdrawableNotes] = useState([]);
   const [selectedNoteForWithdraw, setSelectedNoteForWithdraw] = useState(null);
   const [isDelegateApproved, setIsDelegateApproved] = useState(false);
+  const delegateCheckCompleteRef = useRef(false); // Once we have on-chain result, don't let fallback override
   const [walletBalance, setWalletBalance] = useState(0);
   const [copiedItem, setCopiedItem] = useState(null); // Track what was copied for feedback
   const [ataBalance, setAtaBalance] = useState(0);
@@ -110,25 +111,29 @@ function Dashboard() {
   }, [isAuthenticated, authUser]);
 
   // Check on-chain if relayer delegate is already approved (so we don't prompt every login)
-  // Fallback: if user has shielded notes, they must have approved (deposits require it)
   useEffect(() => {
     const check = async () => {
       if (!wallet.publicKey || !connection || !checkRelayerDelegateApproved) return;
+      delegateCheckCompleteRef.current = false;
       try {
         const approved = await checkRelayerDelegateApproved({
           connection,
           walletPublicKey: wallet.publicKey.toBase58(),
         });
+        delegateCheckCompleteRef.current = true;
         setIsDelegateApproved(approved);
       } catch (err) {
+        delegateCheckCompleteRef.current = true;
         console.warn('[Dashboard] checkRelayerDelegateApproved:', err?.message);
       }
     };
     check();
   }, [wallet.publicKey, connection, checkRelayerDelegateApproved]);
 
-  // Fallback: if user has shielded balance/notes, they've already approved (can't deposit without it)
+  // Fallback: if user has shielded notes, assume approved ONLY while we're still waiting for the on-chain check.
+  // Once the check completes, trust its result - do NOT override a false (e.g. after relayer key rotation).
   useEffect(() => {
+    if (delegateCheckCompleteRef.current) return; // Trust on-chain result, don't override
     if ((spendableNotes?.length > 0 || allNotes?.length > 0) && !isDelegateApproved) {
       setIsDelegateApproved(true);
     }

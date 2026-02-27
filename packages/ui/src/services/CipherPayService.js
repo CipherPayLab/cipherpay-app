@@ -1753,12 +1753,14 @@ class CipherPayService {
 
             console.log('[CipherPayService] Computed commitment for withdraw:', commitment.toString(16));
 
-            // Step 1: Prepare withdraw - get merkle path
-            const relayerUrl = this.config.relayerUrl || 'http://localhost:3000';
-            const prepareResponse = await fetch(`${relayerUrl}/api/v1/prepare/withdraw`, {
+            // Step 1: Prepare withdraw - get merkle path (use server proxy; browser cannot reach relayer at localhost)
+            const serverUrl = getServerBaseUrl();
+            const prepareAuthToken = localStorage.getItem('cipherpay_token');
+            const prepareResponse = await fetch(`${serverUrl}/api/v1/prepare/withdraw`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
+                    ...(prepareAuthToken ? { 'Authorization': `Bearer ${prepareAuthToken}` } : {}),
                 },
                 body: JSON.stringify({
                     spendCommitment: commitment.toString(10)
@@ -1944,8 +1946,7 @@ class CipherPayService {
                 );
             }
 
-            // Step 5: Submit withdraw to relayer
-            const relayerApiKey = this.config.relayerApiKey;
+            // Step 5: Submit withdraw via server (proxies to relayer)
             const submitBody = {
                 operation: 'withdraw',
                 tokenMint: 'So11111111111111111111111111111111111111112', // wSOL mint
@@ -1962,12 +1963,13 @@ class CipherPayService {
                 // recipientTokenAccount will be derived by relayer from recipientOwner
             };
 
-            console.log('[CipherPayService] Submitting withdraw to relayer...');
-            const submitResponse = await fetch(`${relayerUrl}/api/v1/submit/withdraw`, {
+            console.log('[CipherPayService] Submitting withdraw via server...');
+            const authToken = localStorage.getItem('cipherpay_token');
+            const submitResponse = await fetch(`${serverUrl}/api/v1/submit/withdraw`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    ...(relayerApiKey ? { 'Authorization': `Bearer ${relayerApiKey}` } : {}),
+                    ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {}),
                 },
                 body: JSON.stringify(submitBody)
             });
