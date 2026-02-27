@@ -82,6 +82,13 @@ export default async function (app: FastifyInstance) {
         where.read_at = null;
       }
 
+      // Exclude failed note-deposits (tx_signature IS NULL) - these were never confirmed on-chain
+      // and would cause "commitment not found" when trying to withdraw
+      where.OR = [
+        { kind: { not: "note-deposit" } },
+        { tx_signature: { not: null } },
+      ];
+
       const [messages, total] = await Promise.all([
         prisma.messages.findMany({
           where,
