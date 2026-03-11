@@ -1,6 +1,7 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { prisma } from "../db/prisma.js";
+import { env } from "../config/env.js";
 import { computeContentHash } from "../services/crypto.js";
 import { KnownKindsZ } from "../validation/sdk.js";
 
@@ -29,6 +30,8 @@ export default async function (app: FastifyInstance) {
       senderKey: z.string().regex(/^0x[0-9a-fA-F]+$/).optional(),
       nullifierHex: z.string().regex(/^[0-9a-fA-F]{64}$/).optional(), // For withdraw messages
       amount: z.string().optional(), // Amount in lamports (as string to handle BigInt)
+      proofHex: z.string().regex(/^(0x)?[0-9a-fA-F]{1,512}$/).optional(), // Groth16 proof (256 bytes = 512 hex chars)
+      proofPublicSignals: z.union([z.string(), z.array(z.string())]).optional(), // JSON array of public signals
     });
 
     const body = BodyZ.parse(req.body);
@@ -75,7 +78,15 @@ export default async function (app: FastifyInstance) {
       // For transfers/withdraws: nullifierHex contains the actual nullifier
       const commitmentHex = body.kind === "note-deposit" ? (body.nullifierHex ?? null) : null;
       const nullifierHex = body.kind !== "note-deposit" ? (body.nullifierHex ?? null) : null;
-      
+      const proofPublicSignalsJson =
+        body.proofPublicSignals != null
+          ? typeof body.proofPublicSignals === "string"
+            ? body.proofPublicSignals
+            : JSON.stringify(body.proofPublicSignals)
+          : null;
+      const proofHex =
+        body.proofHex != null ? body.proofHex.replace(/^0x/i, "") : null;
+
       const row = await prisma.messages.create({
         data: {
           recipient_key: finalRecipientKey,
@@ -87,6 +98,9 @@ export default async function (app: FastifyInstance) {
           content_hash: h,
           commitment_hex: commitmentHex,
           nullifier_hex: nullifierHex,
+          proof_hex: proofHex,
+          proof_public_signals: proofPublicSignalsJson,
+          verifier_key_id: env.verifierKeyId,
         },
         select: { id: true },
       });

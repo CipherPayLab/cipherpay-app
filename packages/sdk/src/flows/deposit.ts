@@ -6,6 +6,7 @@ import { commitmentOf } from "../notes/commitment.js";
 import { tokenIdOf } from "../registry/tokenId.js";
 import { generateDepositProof } from "../circuits/deposit/prover.js";
 import { poseidonHash } from "../crypto/poseidon.js";
+import { groth16ProofToHex } from "../utils/zk.js";
 
 export interface DepositParams {
   identity: Identity;
@@ -47,6 +48,10 @@ export interface DepositResult {
   txId?: string;
   proofSubmitted?: boolean;
   signature?: string;
+  /** Groth16 proof as hex string (256 bytes = 512 hex chars) for storage/audit */
+  proofHex?: string;
+  /** Public signals as string array for storage/audit */
+  proofPublicSignals?: string[];
 }
 
 // Field modulus for BN254
@@ -240,6 +245,11 @@ export async function deposit(params: DepositParams): Promise<DepositResult> {
     ok?: boolean;
   };
 
+  const proofHex = groth16ProofToHex(proof as { pi_a: any[]; pi_b: any[][]; pi_c: any[] });
+  const proofPublicSignalsArr = Array.isArray(publicSignals)
+    ? publicSignals.map((s: any) => String(s))
+    : Object.values(publicSignals).map((s: any) => String(s));
+
   return {
     commitment,
     index: prep.nextLeafIndex,
@@ -247,5 +257,7 @@ export async function deposit(params: DepositParams): Promise<DepositResult> {
     txId: submitResult.signature || submitResult.txid || submitResult.txSig,
     proofSubmitted: true,
     signature: submitResult.signature || submitResult.txid || submitResult.txSig,
+    proofHex,
+    proofPublicSignals: proofPublicSignalsArr,
   };
 }

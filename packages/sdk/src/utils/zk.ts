@@ -29,3 +29,27 @@ export function bigintifySignals<T extends Record<string, unknown>>(s: T): Recor
   }
   return out;
 }
+
+/** Convert snarkjs Groth16 proof to hex string (256 bytes = 512 hex chars). */
+export function groth16ProofToHex(proof: { pi_a: any[]; pi_b: any[][]; pi_c: any[] }): string {
+  const toBI = (v: any) => BigInt(v.toString());
+  const beBytes32 = (x: bigint): Uint8Array => {
+    const out = new Uint8Array(32);
+    let v = x;
+    for (let i = 31; i >= 0; i--) {
+      out[i] = Number(v & 0xffn);
+      v >>= 8n;
+    }
+    return out;
+  };
+  const parts = [
+    toBI(proof.pi_a[0]), toBI(proof.pi_a[1]),
+    toBI(proof.pi_b[0][0]), toBI(proof.pi_b[0][1]),
+    toBI(proof.pi_b[1][0]), toBI(proof.pi_b[1][1]),
+    toBI(proof.pi_c[0]), toBI(proof.pi_c[1]),
+  ];
+  const bytes = parts.map(beBytes32);
+  const total = new Uint8Array(bytes.length * 32);
+  bytes.forEach((b, i) => total.set(b, i * 32));
+  return Array.from(total).map((b) => b.toString(16).padStart(2, "0")).join("");
+}

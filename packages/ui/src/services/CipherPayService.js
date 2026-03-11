@@ -858,6 +858,9 @@ class CipherPayService {
                 ? recipientCipherPayPubKey  // Full transfer: both to recipient
                 : (recipientGetsOut1 ? BigInt(inputNoteToUse.ownerCipherPayPubKey) : recipientCipherPayPubKey);
             
+            // Capture contentHashes for proof storage after transfer succeeds
+            const transferContentHashes = [];
+
             const transferParams = {
                 identity,
                 inputNote: inputNoteObj,
@@ -1031,6 +1034,7 @@ class CipherPayService {
                         });
                         if (messageResponse.ok) {
                             const messageResult = await messageResponse.json();
+                            if (messageResult.contentHash) transferContentHashes.push(messageResult.contentHash);
                         } else {
                             const errorText = await messageResponse.text();
                             console.error('[CipherPayService] ❌ Failed to save out1 note message:', messageResponse.status, errorText);
@@ -1190,6 +1194,7 @@ class CipherPayService {
                         });
                         if (messageResponse.ok) {
                             const messageResult = await messageResponse.json();
+                            if (messageResult.contentHash) transferContentHashes.push(messageResult.contentHash);
                         } else {
                             const errorText = await messageResponse.text();
                             console.warn('[CipherPayService] Failed to save out2 note message:', errorText);
@@ -1202,6 +1207,29 @@ class CipherPayService {
 
             // Call SDK transfer
             const result = await window.CipherPaySDK.transfer(transferParams);
+
+            // Store proof on both output messages after successful transfer
+            if (result.proofHex && result.proofPublicSignals && transferContentHashes.length > 0) {
+                const patchPromises = transferContentHashes.map((contentHash) =>
+                    fetch(`${serverUrl}/api/v1/messages/${contentHash}/proof`, {
+                        method: 'PATCH',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {}),
+                        },
+                        body: JSON.stringify({
+                            proofHex: result.proofHex,
+                            proofPublicSignals: result.proofPublicSignals,
+                        }),
+                    })
+                );
+                try {
+                    await Promise.all(patchPromises);
+                    console.log('[CipherPayService] Stored proof on transfer messages');
+                } catch (e) {
+                    console.warn('[CipherPayService] Failed to store proof on messages:', e);
+                }
+            }
 
 
             // Note: We don't need to create a separate "note-transfer-sent" message.
@@ -1430,6 +1458,9 @@ class CipherPayService {
                 useDelegate: params.useDelegate,
             };
 
+            // Capture contentHash for proof storage after deposit succeeds
+            let depositContentHash = null;
+
             // Callback to save encrypted note during prepare phase
             const onNoteReady = async (note) => {
                 try {
@@ -1499,6 +1530,7 @@ class CipherPayService {
                     
                     if (messageResponse.ok) {
                         const messageResult = await messageResponse.json();
+                        depositContentHash = messageResult.contentHash;
                         console.log('[CipherPayService] Saved encrypted note message during prepare:', messageResult);
                     } else {
                         const errorText = await messageResponse.text();
@@ -1523,6 +1555,30 @@ class CipherPayService {
             const result = await window.CipherPaySDK.deposit(depositParams);
             
             console.log('[CipherPayService] Deposit completed:', result);
+
+            // Store proof on message after successful deposit
+            if (depositContentHash && result.proofHex && result.proofPublicSignals) {
+                try {
+                    const patchRes = await fetch(`${serverUrl}/api/v1/messages/${depositContentHash}/proof`, {
+                        method: 'PATCH',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {}),
+                        },
+                        body: JSON.stringify({
+                            proofHex: result.proofHex,
+                            proofPublicSignals: result.proofPublicSignals,
+                        }),
+                    });
+                    if (patchRes.ok) {
+                        console.log('[CipherPayService] Stored proof on deposit message');
+                    } else {
+                        console.warn('[CipherPayService] Failed to store proof on message:', await patchRes.text());
+                    }
+                } catch (e) {
+                    console.warn('[CipherPayService] Failed to store proof:', e);
+                }
+            }
             
             return {
                 txHash: result.signature || result.txId,
@@ -1799,6 +1855,9 @@ class CipherPayService {
 
             // Step 1.5: Create withdraw message during prepare phase (before proof generation)
             // This follows the same pattern as deposits and transfers
+            // Capture contentHash for proof storage after withdraw succeeds
+            let withdrawContentHash = null;
+
             const nullifier = await poseidonHash([
                 recipientCipherPayPubKey,
                 randomness,
@@ -1863,6 +1922,7 @@ class CipherPayService {
                     
                     if (messageResponse.ok) {
                         const messageResult = await messageResponse.json();
+                        withdrawContentHash = messageResult.contentHash;
                         console.log('[CipherPayService] Saved withdraw message during prepare:', messageResult);
                     } else {
                         const errorText = await messageResponse.text();
@@ -2004,8 +2064,38 @@ class CipherPayService {
             const submitResult = await submitResponse.json();
             console.log('[CipherPayService] Withdraw submitted successfully:', submitResult);
 
-            // Note: Message was already created during prepare phase
-            // It will be updated by the event listener when WithdrawCompleted event is received
+            // Store proof on withdraw message after successful submit
+            if (withdrawContentHash && proof && publicSignals) {
+                try {
+                    const proofHex = window.CipherPaySDK?.groth16ProofToHex
+                        ? window.CipherPaySDK.groth16ProofToHex(proof)
+                        : null;
+                    const proofPublicSignalsArr = Array.isArray(publicSignals)
+                        ? publicSignals.map((s) => String(s))
+                        : Object.values(publicSignals).map((s) => String(s));
+                    if (proofHex) {
+                        const authToken = localStorage.getItem('cipherpay_token');
+                        const patchRes = await fetch(`${serverUrl}/api/v1/messages/${withdrawContentHash}/proof`, {
+                            method: 'PATCH',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {}),
+                            },
+                            body: JSON.stringify({
+                                proofHex,
+                                proofPublicSignals: proofPublicSignalsArr,
+                            }),
+                        });
+                        if (patchRes.ok) {
+                            console.log('[CipherPayService] Stored proof on withdraw message');
+                        } else {
+                            console.warn('[CipherPayService] Failed to store proof on withdraw message:', await patchRes.text());
+                        }
+                    }
+                } catch (e) {
+                    console.warn('[CipherPayService] Failed to store withdraw proof:', e);
+                }
+            }
 
             return {
                 txHash: submitResult.signature || submitResult.txid || submitResult.txSig || 'pending',

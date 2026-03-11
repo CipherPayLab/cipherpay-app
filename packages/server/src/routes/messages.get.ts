@@ -104,6 +104,9 @@ export default async function (app: FastifyInstance) {
             kind: true,
             content_hash: true,
             nullifier_hex: true,
+            proof_hex: true,
+            proof_public_signals: true,
+            verifier_key_id: true,
             tx_signature: true,
             created_at: true,
             read_at: true,
@@ -124,6 +127,17 @@ export default async function (app: FastifyInstance) {
           kind: msg.kind,
           contentHash: msg.content_hash,
           nullifierHex: msg.nullifier_hex || null,
+          proofHex: msg.proof_hex || null,
+          proofPublicSignals: msg.proof_public_signals
+            ? (() => {
+                try {
+                  return JSON.parse(msg.proof_public_signals as string);
+                } catch {
+                  return msg.proof_public_signals;
+                }
+              })()
+            : null,
+          verifierKeyId: msg.verifier_key_id,
           txSignature: msg.tx_signature || null,
           createdAt: msg.created_at.toISOString(),
           readAt: msg.read_at?.toISOString() || null,
