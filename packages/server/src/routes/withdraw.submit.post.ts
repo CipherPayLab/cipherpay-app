@@ -1,5 +1,8 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { prisma } from "../db/prisma.js";
+import { env } from "../config/env.js";
+import { groth16ProofToHex, normalizeHex64, serializePublicSignals } from "../utils/proof.js";
 
 const RELAYER_URL = process.env.RELAYER_URL || "http://localhost:4000";
 const RELAYER_TOKEN = process.env.RELAYER_TOKEN || process.env.API_TOKEN || "";
@@ -56,6 +59,37 @@ export default async function (app: FastifyInstance) {
       }
 
       const data = await response.json();
+
+      // ---- Persist ZK proof to messages table ---------------------------------
+      if (body.nullifier && body.proof && body.publicSignals?.length) {
+        const nullifierHex = normalizeHex64(body.nullifier);
+        try {
+          const proofHex = groth16ProofToHex(body.proof as any);
+          const proofPublicSignals = serializePublicSignals(body.publicSignals);
+          const updated = await prisma.messages.updateMany({
+            where: { nullifier_hex: nullifierHex, kind: "note-withdraw" },
+            data: {
+              proof_hex: proofHex,
+              proof_public_signals: proofPublicSignals,
+              verifier_key_id: env.verifierKeyId,
+            },
+          });
+          if (updated.count > 0) {
+            req.log.info(
+              { nullifierHex, count: updated.count },
+              "[withdraw.submit] Persisted proof to messages"
+            );
+          } else {
+            req.log.warn(
+              { nullifierHex },
+              "[withdraw.submit] No messages row matched nullifier — proof not saved"
+            );
+          }
+        } catch (err) {
+          req.log.warn({ err, nullifierHex }, "[withdraw.submit] Failed to persist proof");
+        }
+      }
+
       return rep.send(data);
     } catch (error: any) {
       app.log.error(error);
