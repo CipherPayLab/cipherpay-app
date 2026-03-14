@@ -1,8 +1,13 @@
 // src/routes/auth.verify.ts
 import { FastifyInstance } from "fastify";
+import { randomBytes } from "crypto";
 import { z } from "zod";
 import { prisma } from "../db/prisma.js";
 import { poseidonLoginMsg, verifyBabyJubSig } from "../services/crypto.js";
+
+const SESSION_COOKIE_NAME =
+  process.env.CIPHERPAY_SESSION_COOKIE_NAME ?? "cipherpay_session_nonce";
+const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24; // 24 hours
 
 /**
  * POST /auth/verify
@@ -113,6 +118,32 @@ export default async function (app: FastifyInstance) {
         { sub: String(user.id), ownerKey: user.owner_cipherpay_pub_key },
         { expiresIn: "1h" }
       );
+
+      // ---- Set a long-lived session cookie for zkaudit cross-app auth ------
+      // Cookies are domain-scoped (not port-scoped), so a cookie set by
+      // localhost:8788 is automatically sent by the browser to localhost:3100.
+      const sessionNonce = randomBytes(32).toString("hex");
+      const expiresAt = new Date(Date.now() + SESSION_MAX_AGE_SECONDS * 1000);
+      try {
+        await prisma.sessions.create({
+          data: {
+            user_id: user.id,
+            nonce: sessionNonce,
+            expires_at: expiresAt,
+          },
+        });
+        const cookieValue = [
+          `${SESSION_COOKIE_NAME}=${sessionNonce}`,
+          "HttpOnly",
+          "Path=/",
+          "SameSite=Lax",
+          `Max-Age=${SESSION_MAX_AGE_SECONDS}`,
+        ].join("; ");
+        rep.header("Set-Cookie", cookieValue);
+        req.log.info({ userId: String(user.id) }, "[auth.verify] Session cookie set");
+      } catch (cookieErr) {
+        req.log.warn({ err: cookieErr }, "[auth.verify] Failed to create session cookie; continuing");
+      }
 
       // NOTE: user.id may be a BigInt depending on Prisma schema -> stringify it.
       return rep.code(200).send({
