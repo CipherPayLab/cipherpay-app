@@ -81,6 +81,9 @@ model messages {
   content_hash     String   @unique(map: "uq_messages_content_hash") @db.VarChar(66)
   commitment_hex   String?  @db.VarChar(64)  // For deposits: commitment (NULL for transfers/withdraws)
   nullifier_hex    String?  @db.VarChar(64)  // For transfers/withdraws: nullifier (NULL for deposits)
+  proof_hex        String?  @db.VarChar(512)  // Groth16 ZK proof (256 bytes as hex), for audit
+  proof_public_signals String?  @db.Text     // JSON array of public signals
+  verifier_key_id  String   @default("groth16_bn254_v1") @db.VarChar(64)  // Verifying key id for audit (e.g. transfer_groth16_bn254_vk_0001)
   tx_signature     String?  @db.VarChar(88)  // Transaction signature (updated by event listener)
   created_at    DateTime  @default(now()) @db.Timestamp(0)
   read_at       DateTime? @db.Timestamp(0)

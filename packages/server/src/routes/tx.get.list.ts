@@ -357,6 +357,17 @@ export default async function (app: FastifyInstance) {
           amount: msg.amount ? String(msg.amount) : null,
           content_hash: msg.content_hash,
           nullifier_hex: msg.nullifier_hex,
+          proof_hex: msg.proof_hex ?? null,
+          proof_public_signals: msg.proof_public_signals
+            ? (() => {
+                try {
+                  return JSON.parse(msg.proof_public_signals);
+                } catch {
+                  return msg.proof_public_signals;
+                }
+              })()
+            : null,
+          verifier_key_id: msg.verifier_key_id ?? null,
         },
         _isFromMessages: true, // Flag to indicate this came from messages table
       };
@@ -401,6 +412,17 @@ export default async function (app: FastifyInstance) {
           amount: msg.amount ? String(msg.amount) : null,
           content_hash: msg.content_hash,
           nullifier_hex: msg.nullifier_hex,
+          proof_hex: msg.proof_hex ?? null,
+          proof_public_signals: msg.proof_public_signals
+            ? (() => {
+                try {
+                  return JSON.parse(msg.proof_public_signals);
+                } catch {
+                  return msg.proof_public_signals;
+                }
+              })()
+            : null,
+          verifier_key_id: msg.verifier_key_id ?? null,
         },
         _isPending: true, // Flag to indicate this is a pending activity
       };
@@ -585,11 +607,20 @@ export default async function (app: FastifyInstance) {
           recipient_key: finalRecipientKey,
           message: message ? {
             id: String(message.id),
-            // Convert Buffer to base64 string (Prisma returns Bytes as Buffer)
             ciphertext: Buffer.from(message.ciphertext).toString('base64'),
             kind: message.kind,
-            // Include amount directly from message (unencrypted field)
             amount: message.amount ? String(message.amount) : null,
+            proof_hex: message.proof_hex ?? null,
+            proof_public_signals: message.proof_public_signals
+              ? (() => {
+                  try {
+                    return JSON.parse(message.proof_public_signals);
+                  } catch {
+                    return message.proof_public_signals;
+                  }
+                })()
+              : null,
+            verifier_key_id: message.verifier_key_id ?? null,
           } : null,
         };
       })
@@ -651,6 +682,17 @@ export default async function (app: FastifyInstance) {
               amount: msg.amount ? String(msg.amount) : null,
               content_hash: msg.content_hash,
               nullifier_hex: msg.nullifier_hex,
+              proof_hex: msg.proof_hex ?? null,
+              proof_public_signals: msg.proof_public_signals
+                ? (() => {
+                    try {
+                      return JSON.parse(msg.proof_public_signals);
+                    } catch {
+                      return msg.proof_public_signals;
+                    }
+                  })()
+                : null,
+              verifier_key_id: msg.verifier_key_id ?? null,
             },
           });
         });

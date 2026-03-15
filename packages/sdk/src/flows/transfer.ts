@@ -6,6 +6,7 @@ import { commitmentOf } from "../notes/commitment.js";
 import { tokenIdOf } from "../registry/tokenId.js";
 import { generateTransferProof } from "../circuits/transfer/prover.js";
 import { poseidonHash } from "../crypto/poseidon.js";
+import { groth16ProofToHex } from "../utils/zk.js";
 
 export interface TransferParams {
   identity: Identity;
@@ -66,6 +67,10 @@ export interface TransferResult {
   txId?: string;
   proofSubmitted?: boolean;
   signature?: string;
+  /** Groth16 proof as hex string (256 bytes = 512 hex chars) for storage/audit */
+  proofHex?: string;
+  /** Public signals as string array for storage/audit */
+  proofPublicSignals?: string[];
 }
 
 // Field modulus for BN254
@@ -522,6 +527,11 @@ export async function transfer(params: TransferParams): Promise<TransferResult> 
     root2?: string;
   };
 
+  const proofHex = groth16ProofToHex(proof as { pi_a: any[]; pi_b: any[][]; pi_c: any[] });
+  const proofPublicSignalsArr = Array.isArray(publicSignals)
+    ? publicSignals.map((s: any) => String(s))
+    : Object.values(publicSignals).map((s: any) => String(s));
+
   return {
     out1Commitment,
     out2Commitment,
@@ -533,5 +543,7 @@ export async function transfer(params: TransferParams): Promise<TransferResult> 
     txId: submitResult.signature || submitResult.txid || submitResult.txSig,
     proofSubmitted: true,
     signature: submitResult.signature || submitResult.txid || submitResult.txSig,
+    proofHex,
+    proofPublicSignals: proofPublicSignalsArr,
   };
 }

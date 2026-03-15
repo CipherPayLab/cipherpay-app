@@ -2,6 +2,11 @@ import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { getUserWsolAta, getUserSolanaWallet } from "../services/userAta.js";
 import { NATIVE_MINT } from "@solana/spl-token";
+import { prisma } from "../db/prisma.js";
+import { env } from "../config/env.js";
+import { normalizeHex64, serializePublicSignals } from "../utils/proof.js";
+
+const DEPOSIT_VERIFIER_KEY_ID = "groth16_deposit_bn254_v1";
 
 const RELAYER_URL = process.env.RELAYER_URL || "http://localhost:3000";
 const RELAYER_TOKEN = process.env.RELAYER_TOKEN || process.env.API_TOKEN || "";
@@ -79,6 +84,47 @@ export default async function (app: FastifyInstance) {
       }
 
       const data = await response.json();
+
+      // ---- Persist ZK proof to messages table ---------------------------------
+      // Deposits are matched by commitment_hex (no nullifier for deposits).
+      const commitmentHex = finalBody.commitment
+        ? normalizeHex64(finalBody.commitment)
+        : undefined;
+      if (commitmentHex && finalBody.proof && finalBody.publicSignals?.length) {
+        try {
+          // Store proof as JSON string (snarkjs format) so zkaudit can verify it directly
+          const proofHex = JSON.stringify(finalBody.proof);
+          const proofPublicSignals = serializePublicSignals(finalBody.publicSignals);
+          const txSignature: string | null =
+            (data as any)?.txSignature ??
+            (data as any)?.tx_signature ??
+            (data as any)?.signature ??
+            null;
+          const updated = await prisma.messages.updateMany({
+            where: { commitment_hex: commitmentHex, kind: "note-deposit" },
+            data: {
+              proof_hex: proofHex,
+              proof_public_signals: proofPublicSignals,
+              verifier_key_id: DEPOSIT_VERIFIER_KEY_ID,
+              ...(txSignature ? { tx_signature: txSignature } : {}),
+            },
+          });
+          if (updated.count > 0) {
+            req.log.info(
+              { commitmentHex, count: updated.count },
+              "[deposit.submit] Persisted proof to messages"
+            );
+          } else {
+            req.log.warn(
+              { commitmentHex },
+              "[deposit.submit] No messages row matched commitment — proof not saved"
+            );
+          }
+        } catch (err) {
+          req.log.warn({ err, commitmentHex }, "[deposit.submit] Failed to persist proof");
+        }
+      }
+
       return rep.send(data);
     } catch (error: any) {
       app.log.error(error);

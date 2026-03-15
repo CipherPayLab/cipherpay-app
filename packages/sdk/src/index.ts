@@ -10,7 +10,7 @@ export type { SDKConfig } from "./sdk.js";
 
 // Utility exports for server usage
 export { TOKENS } from "./config/assets.js";
-export { bigintifySignals } from "./utils/zk.js";
+export { bigintifySignals, groth16ProofToHex } from "./utils/zk.js";
 export { poseidonHash, poseidonHashForAuth } from "./crypto/poseidon.js";
 export {
   getAuthPubKeyFromPrivKey,

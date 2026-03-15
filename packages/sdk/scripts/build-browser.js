@@ -61,6 +61,7 @@ async function buildBrowser() {
     // This allows both: new CipherPaySDK(config) AND CipherPaySDK.poseidonHash(...)
     SDKClass.TOKENS = __SDK_EXPORTS__.TOKENS;
     SDKClass.bigintifySignals = __SDK_EXPORTS__.bigintifySignals;
+    SDKClass.groth16ProofToHex = __SDK_EXPORTS__.groth16ProofToHex;
     SDKClass.commitmentOf = __SDK_EXPORTS__.commitmentOf;
     SDKClass.poseidonHash = __SDK_EXPORTS__.poseidonHash;
     SDKClass.poseidonHashForAuth = __SDK_EXPORTS__.poseidonHashForAuth;

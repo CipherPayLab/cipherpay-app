@@ -16,10 +16,6 @@ const commonjsPlugin = () => ({
   name: 'commonjs-default-export',
   transform(code, id) {
     if (!code.includes('module.exports') || code.includes('export default')) return null;
-    // blake2b
-    if (id.includes('blake2b')) {
-      return { code: code + '\nexport default module.exports;', map: null };
-    }
     // eventemitter3 - only add default export (shim re-exports as EventEmitter); two export lines broke esbuild
     if (id.replace(/\\/g, '/').includes('eventemitter3/index.js')) {
       return { code: code + '\nexport default module.exports;', map: null };
@@ -102,8 +98,7 @@ export default defineConfig({
       format: 'esm',
     },
     exclude: ['cipherpay-sdk'], // SDK is loaded via browser bundle
-    include: ['buffer', 'assert', 'events', 'util', 'stream-browserify', 'blake2b', 'circomlibjs', 'eventemitter3'],
-    force: true, // Force re-optimization to handle blake2b
+    include: ['buffer', 'assert', 'events', 'util', 'stream-browserify', 'circomlibjs', 'eventemitter3'],
   },
   ssr: {
     noExternal: [], // Don't externalize anything for SSR
