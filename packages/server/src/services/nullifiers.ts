@@ -68,13 +68,21 @@ export async function checkNullifierOnChain(
 }
 
 /**
- * Store or update nullifier in database
+ * Store or update nullifier in database.
+ * @param nullifierBytes - Raw nullifier bytes used for PDA derivation (must match on-chain seed).
+ * @param onChainData - On-chain state data.
+ * @param nullifierHexOverride - Optional hex string to use as the DB join key (nullifier_hex).
+ *   Pass the big-endian hex when nullifierBytes are in little-endian (Anchor event) format so
+ *   the JOIN with messages.nullifier_hex (which stores big-endian from snarkjs) works correctly.
  */
 export async function upsertNullifier(
   nullifierBytes: Buffer | Uint8Array,
-  onChainData: { used: boolean; txSignature?: string; spentAt?: Date; eventType?: string }
+  onChainData: { used: boolean; txSignature?: string; spentAt?: Date; eventType?: string },
+  nullifierHexOverride?: string
 ): Promise<void> {
-  const nullifierHex = Buffer.from(nullifierBytes).toString("hex");
+  // Use the override hex (big-endian, matches messages.nullifier_hex) when provided,
+  // otherwise fall back to the raw bytes hex (e.g. from syncNullifier where bytes are already BE).
+  const nullifierHex = nullifierHexOverride ?? Buffer.from(nullifierBytes).toString("hex");
   const pda = deriveNullifierPda(nullifierBytes);
   const nullifierBuffer = Buffer.from(nullifierBytes);
 

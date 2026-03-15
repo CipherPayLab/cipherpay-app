@@ -504,19 +504,21 @@ export class OnChainEventListener {
   private async storeTransferEvent(event: any, txSignature: string) {
     try {
       // Event nullifier comes as number[] (bytes from Anchor event)
-      // Anchor events provide field elements as 32-byte arrays in little-endian format
-      // Use the bytes directly to match nullifierToHex format
+      // Anchor events provide field elements as 32-byte arrays in little-endian format.
+      // Keep raw LE bytes for PDA derivation (must match the on-chain seed).
+      // Convert to big-endian hex for the DB join key so it matches messages.nullifier_hex
+      // (which stores big-endian from snarkjs public signals).
       const nullifierBytes = Buffer.from(event.nullifier);
-      const nullifierHex = nullifierBytes.toString("hex");
+      const nullifierHex = le32ToBeHex(event.nullifier).replace(/^0x/i, "").toLowerCase();
 
-      // Store nullifier in nullifiers table
+      // Store nullifier in nullifiers table (pass big-endian hex override for the join key)
       try {
         await upsertNullifier(nullifierBytes, {
           used: true,
           txSignature,
           spentAt: new Date(),
           eventType: "transfer",
-        });
+        }, nullifierHex);
       } catch (nullifierError) {
         console.error("[EventListener] Failed to save nullifier:", nullifierError);
         // Continue with storing commitments even if nullifier save fails
@@ -603,10 +605,12 @@ export class OnChainEventListener {
   private async storeWithdrawEvent(event: any, txSignature: string): Promise<string | null> {
     try {
       // Event nullifier comes as number[] (bytes from Anchor event)
-      // Anchor events provide field elements as 32-byte arrays in little-endian format
-      // Use the bytes directly to match nullifierToHex format
+      // Anchor events provide field elements as 32-byte arrays in little-endian format.
+      // Keep raw LE bytes for PDA derivation (must match the on-chain seed).
+      // Convert to big-endian hex for the DB join key so it matches messages.nullifier_hex
+      // (which stores big-endian from snarkjs public signals).
       const nullifierBytes = Buffer.from(event.nullifier);
-      const nullifierHex = nullifierBytes.toString("hex");
+      const nullifierHex = le32ToBeHex(event.nullifier).replace(/^0x/i, "").toLowerCase();
       
       // Get owner key from the withdraw message (created during prepare phase)
       // The message's recipient_key is the owner's CipherPay pubkey
@@ -627,13 +631,13 @@ export class OnChainEventListener {
         // Continue without owner key - it's optional
       }
 
-      // Store nullifier in nullifiers table
+      // Store nullifier in nullifiers table (pass big-endian hex override for the join key)
       await upsertNullifier(nullifierBytes, {
         used: true,
         txSignature,
         spentAt: new Date(),
         eventType: "withdraw",
-      });
+      }, nullifierHex);
 
       // For withdrawals, we don't have a commitment to store, but we can track the nullifier
       // We'll use a special format for the commitment field to track withdrawals
