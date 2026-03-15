@@ -2,7 +2,9 @@ import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { prisma } from "../db/prisma.js";
 import { env } from "../config/env.js";
-import { groth16ProofToHex, normalizeHex64, serializePublicSignals } from "../utils/proof.js";
+import { normalizeHex64, serializePublicSignals } from "../utils/proof.js";
+
+const WITHDRAW_VERIFIER_KEY_ID = "groth16_withdraw_bn254_v1";
 
 const RELAYER_URL = process.env.RELAYER_URL || "http://localhost:4000";
 const RELAYER_TOKEN = process.env.RELAYER_TOKEN || process.env.API_TOKEN || "";
@@ -64,14 +66,21 @@ export default async function (app: FastifyInstance) {
       if (body.nullifier && body.proof && body.publicSignals?.length) {
         const nullifierHex = normalizeHex64(body.nullifier);
         try {
-          const proofHex = groth16ProofToHex(body.proof as any);
+          // Store proof as JSON string (snarkjs format) so zkaudit can verify it directly
+          const proofHex = JSON.stringify(body.proof);
           const proofPublicSignals = serializePublicSignals(body.publicSignals);
+          const txSignature: string | null =
+            (data as any)?.txSignature ??
+            (data as any)?.tx_signature ??
+            (data as any)?.signature ??
+            null;
           const updated = await prisma.messages.updateMany({
             where: { nullifier_hex: nullifierHex, kind: "note-withdraw" },
             data: {
               proof_hex: proofHex,
               proof_public_signals: proofPublicSignals,
-              verifier_key_id: env.verifierKeyId,
+              verifier_key_id: WITHDRAW_VERIFIER_KEY_ID,
+              ...(txSignature ? { tx_signature: txSignature } : {}),
             },
           });
           if (updated.count > 0) {
