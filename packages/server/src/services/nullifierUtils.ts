@@ -29,14 +29,27 @@ export async function computeNullifierBigInt(params: {
   return poseidonHash([ownerKey, randomnessR, tokenId]);
 }
 
+/**
+ * Encode nullifier as 32-byte big-endian hex (64 chars, lowercase, no 0x).
+ * Must match nullifier_hex format in DB and nullifiers table for isNullifierSpent lookup.
+ */
 export function nullifierToHex(nullifier: bigint): string {
   const buf = Buffer.alloc(32);
   let value = nullifier;
-  for (let i = 0; i < 32; i++) {
+  for (let i = 31; i >= 0; i--) {
     buf[i] = Number(value & 0xffn);
     value >>= 8n;
   }
-  return buf.toString("hex");
+  return buf.toString("hex").toLowerCase();
+}
+
+/**
+ * Normalize nullifier hex for consistent DB lookup.
+ * Ensures lowercase, no 0x, and exactly 64 chars (pads leading zeros if needed).
+ */
+export function normalizeNullifierHex(hex: string): string {
+  const cleaned = hex.replace(/^0x/i, "").toLowerCase();
+  return cleaned.padStart(64, "0").slice(0, 64);
 }
 
 export function normalizeOwnerCipherPayKey(value: string): string {

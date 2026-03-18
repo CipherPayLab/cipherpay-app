@@ -699,43 +699,31 @@ export default async function (app: FastifyInstance) {
       }
     });
 
-    // Combine tx-based activities, additional transfer activities, processed messages, and pending message activities
-    // Deduplicate: if a message has a corresponding tx, prefer the tx version
-    const allActivities = [...enriched, ...transferActivities, ...processedActivities, ...pendingActivities];
+    // Combine tx-based activities, additional transfer activities, and confirmed message activities.
+    // Pending activities (no tx_signature) are excluded — they represent unconfirmed ZK proof
+    // generation attempts and should not appear as completed transactions.
+    // Priority: enriched (tx-table) > transferActivities > processedActivities
+    const allActivities = [...enriched, ...transferActivities, ...processedActivities];
     
-    // Deduplicate by commitment/content_hash/nullifier_hex/commitment_hex (prefer tx records over message-only)
-    // For deposits: match by commitment_hex (where commitment is stored) or commitment
-    // For transfers: use message ID as primary key to avoid deduplicating different messages with same nullifier
+    // Deduplicate: first occurrence always wins (priority order above is intentional).
+    // Use message ID as primary key when available; fall back to commitment/nullifier/content_hash.
     const seen = new Set<string>();
     const deduplicated = allActivities
       .filter((activity: any) => {
-        // For activities with messages, use message ID as primary key (especially important for transfers)
-        // For activities without messages, use commitment/nullifier/content_hash
         const messageIdKey = activity.message?.id ? `msg-${activity.message.id}` : null;
         const commitmentKey = activity.commitment ? activity.commitment.replace(/^0x/i, '') : null;
         const nullifierKey = activity.message?.nullifier_hex || activity.nullifier_hex;
         const contentHashKey = activity.message?.content_hash || activity.content_hash;
         
-        // Primary key: message ID if available (ensures different messages aren't deduplicated)
-        // Secondary keys: commitment, nullifier, content_hash
         const primaryKey = messageIdKey || commitmentKey || nullifierKey || contentHashKey;
         
-        if (!primaryKey) {
-          // No key available, skip this activity
-          return false;
-        }
+        if (!primaryKey) return false;
         
-        // Check if primary key has been seen
-        if (seen.has(primaryKey)) {
-          // If already seen, prefer the tx version (non-pending, non-from-messages)
-          // This ensures tx records take precedence over message-only records
-          return !activity._isPending && !activity._isFromMessages;
-        }
+        // First occurrence always wins — skip all subsequent duplicates regardless of source
+        if (seen.has(primaryKey)) return false;
         
-        // Mark primary key as seen
         seen.add(primaryKey);
-        
-        // Also mark secondary keys to catch duplicates with different primary keys
+        // Cross-register secondary keys so different paths to the same activity are caught
         if (messageIdKey && commitmentKey) seen.add(commitmentKey);
         if (messageIdKey && nullifierKey) seen.add(nullifierKey);
         if (messageIdKey && contentHashKey) seen.add(contentHashKey);

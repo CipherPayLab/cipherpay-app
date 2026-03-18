@@ -3,6 +3,7 @@
 
 import { Connection, PublicKey } from "@solana/web3.js";
 import { prisma } from "../db/prisma.js";
+import { normalizeNullifierHex } from "./nullifierUtils.js";
 
 const SOLANA_RPC_URL = process.env.SOLANA_RPC_URL || "http://localhost:8899";
 const PROGRAM_ID = process.env.SOLANA_PROGRAM_ID || "24gZSJMyGiAbaTcBEm9WZyfq9TvkJJDQWake7uNHvPKj";
@@ -228,15 +229,15 @@ export async function getUserNullifiers(
 }
 
 /**
- * Check if a nullifier is spent (database first, then on-chain if needed)
+ * Check if a nullifier is spent (database first, then on-chain if needed).
+ * Uses normalized 64-char big-endian hex to match nullifiers.nullifier_hex.
  */
 export async function isNullifierSpent(
   nullifierHex: string,
   checkOnChain: boolean = false
 ): Promise<boolean> {
-  // Normalize hex string (lowercase, no 0x prefix)
-  const normalizedHex = nullifierHex.toLowerCase().replace(/^0x/, '');
-  
+  const normalizedHex = normalizeNullifierHex(nullifierHex);
+
   // Check database first using Prisma if available
   try {
     const nullifier = await (prisma as any).nullifiers.findUnique({
