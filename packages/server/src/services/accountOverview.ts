@@ -31,8 +31,10 @@ export interface AccountOverview {
 }
 
 /**
- * Compute account overview from decrypted notes
- * Checks nullifier status for each note to determine if it's spent
+ * Compute account overview from decrypted notes.
+ * Rule: note is spendable if its nullifier is NOT in nullifiers table with used=1.
+ * Rule: note is spent if nullifier exists in nullifiers with used=1.
+ * Shielded balance = sum of amounts for spendable notes only.
  */
 export async function computeAccountOverview(
   notes: Note[],
