@@ -127,7 +127,7 @@ The `NullifierRecord` account layout:
 ### Environment Variables
 
 - `SOLANA_RPC_URL`: Solana RPC endpoint (default: `http://localhost:8899`)
-- `SOLANA_PROGRAM_ID`: CipherPay Anchor program ID (default: `24gZSJMyGiAbaTcBEm9WZyfq9TvkJJDQWake7uNHvPKj`)
+- `SOLANA_PROGRAM_ID`: CipherPay Anchor program ID (default: `WRy4hstBsD6hxb7CJN4R3fgLnafs621N7EjUhZ2afze`)
 
 ## Future Enhancements
 

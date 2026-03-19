@@ -47,7 +47,7 @@ class CipherPayService {
             relayerUrl: import.meta.env.VITE_RELAYER_URL || getServerBaseUrl(),
             relayerApiKey: import.meta.env.VITE_RELAYER_API_KEY,
             contractAddress: import.meta.env.VITE_CONTRACT_ADDRESS,
-            programId: import.meta.env.VITE_PROGRAM_ID || '24gZSJMyGiAbaTcBEm9WZyfq9TvkJJDQWake7uNHvPKj', // Solana program ID
+            programId: import.meta.env.VITE_PROGRAM_ID || 'WRy4hstBsD6hxb7CJN4R3fgLnafs621N7EjUhZ2afze', // Solana program ID
             enableCompliance: true,
             enableCaching: true,
             enableStealthAddresses: true,
