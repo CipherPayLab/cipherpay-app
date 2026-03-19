@@ -15,7 +15,7 @@
     "dev": "concurrently -n server,ui -c blue,green \"pnpm dev:server\" \"npx wait-on http://localhost:8788/healthz && pnpm dev:ui\"",
     "dev:server": "pnpm --filter @cipherpay/server dev",
     "dev:ui": "pnpm --filter @cipherpay/ui dev",
-    "clean": "pnpm -r clean && rm -rf node_modules",
+    "clean": "pnpm -r clean && rm -rf node_modules packages/*/node_modules packages/*/.turbo packages/*/dist",
     "prisma:gen": "pnpm --filter @cipherpay/server prisma:gen",
     "prisma:pull": "pnpm --filter @cipherpay/server prisma:pull",
     "typecheck": "pnpm -r typecheck",

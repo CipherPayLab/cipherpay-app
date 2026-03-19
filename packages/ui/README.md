@@ -22,6 +22,7 @@ npm run dev
 solana airdrop 20 FiFcdJauUsqSEUmxmNQm2z9fipC33xwvguVDZ43deMw3 --url http://127.0.0.1:8899
 solana airdrop 20 3g5BNi1bzKFv6oS6vHxjeiGYzgMSZCR5bNd3SqipM39m --url http://127.0.0.1:8899
 solana airdrop 20 8VMCHPzwug9rYYudXkLNYTtAGN96ht4mXaqrxHrTijRg --url http://127.0.0.1:8899
+solana airdrop 20 3vaEV2uiK7uFQvcquukhAvQh5nYNrkL4miBJJ3C2Kqsi --url http://127.0.0.1:8899
 
 # Check balance of a wallet
 solana balance FiFcdJauUsqSEUmxmNQm2z9fipC33xwvguVDZ43deMw3 --url http://127.0.0.1:8899
@@ -42,6 +43,6 @@ node scripts/check-vault-balance.js
 node scripts/check-vault-balance.js http://127.0.0.1:8899
 
 # Custom program and mint
-node scripts/check-vault-balance.js http://127.0.0.1:8899 24gZSJMyGiAbaTcBEm9WZyfq9TvkJJDQWake7uNHvPKj So11111111111111111111111111111111111111112
+node scripts/check-vault-balance.js http://127.0.0.1:8899 WRy4hstBsD6hxb7CJN4R3fgLnafs621N7EjUhZ2afze So11111111111111111111111111111111111111112
 --------------------------
 
