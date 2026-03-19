@@ -10,7 +10,7 @@ const SOLANA_RPC_URL = process.env.SOLANA_RPC_URL || "http://localhost:8899";
 const PROGRAM_ID =
   process.env.SOLANA_PROGRAM_ID ||
   process.env.PROGRAM_ID ||
-  "24gZSJMyGiAbaTcBEm9WZyfq9TvkJJDQWake7uNHvPKj";
+  "WRy4hstBsD6hxb7CJN4R3fgLnafs621N7EjUhZ2afze";
 const REDIS_URL = process.env.REDIS_URL;
 
 // Anchor IDL type definitions

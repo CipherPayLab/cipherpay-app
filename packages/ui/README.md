@@ -42,6 +42,6 @@ node scripts/check-vault-balance.js
 node scripts/check-vault-balance.js http://127.0.0.1:8899
 
 # Custom program and mint
-node scripts/check-vault-balance.js http://127.0.0.1:8899 24gZSJMyGiAbaTcBEm9WZyfq9TvkJJDQWake7uNHvPKj So11111111111111111111111111111111111111112
+node scripts/check-vault-balance.js http://127.0.0.1:8899 WRy4hstBsD6hxb7CJN4R3fgLnafs621N7EjUhZ2afze So11111111111111111111111111111111111111112
 --------------------------
 

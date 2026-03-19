@@ -8,7 +8,7 @@ import { Connection, PublicKey } from '@solana/web3.js';
 import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID } from '@solana/spl-token';
 
 const WSOL_MINT = new PublicKey('So11111111111111111111111111111111111111112');
-const DEFAULT_PROGRAM_ID = new PublicKey('24gZSJMyGiAbaTcBEm9WZyfq9TvkJJDQWake7uNHvPKj');
+const DEFAULT_PROGRAM_ID = new PublicKey('WRy4hstBsD6hxb7CJN4R3fgLnafs621N7EjUhZ2afze');
 const VAULT_SEED = Buffer.from('vault');
 
 async function checkVaultBalance(rpcUrl = 'http://127.0.0.1:8899', programId = DEFAULT_PROGRAM_ID, tokenMint = WSOL_MINT) {
