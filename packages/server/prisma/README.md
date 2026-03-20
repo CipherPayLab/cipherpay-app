@@ -4,8 +4,11 @@ docker compose down -v
 # generate database
 docker compose up -d db
 
-# generate tables
+# generate tables (sync schema → DB; use after git pull when schema changed)
 npx prisma db push
+
+# If you see Prisma P2022 / "column ... does not exist", run `db push` again from `packages/server`
+# (or apply SQL under `prisma/migrations/` manually).
 
 # install
 
