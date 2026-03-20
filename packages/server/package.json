@@ -10,7 +10,8 @@
     "build": "pnpm run prepare-server && tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "prisma:gen": "prisma generate",
-    "prisma:pull": "prisma db pull"
+    "prisma:pull": "prisma db pull",
+    "db:push": "prisma db push"
   },
   "dependencies": {
     "@cipherpay/sdk": "workspace:*",
