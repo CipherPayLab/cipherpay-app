@@ -5,8 +5,9 @@
   "main": "dist/server.js",
   "scripts": {
     "clean": "rm -rf dist .turbo",
-    "dev": "tsx src/server.ts",
-    "build": "prisma generate && tsc -p tsconfig.json",
+    "prepare-server": "pnpm --filter @cipherpay/sdk build && prisma generate",
+    "dev": "pnpm run prepare-server && tsx src/server.ts",
+    "build": "pnpm run prepare-server && tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "prisma:gen": "prisma generate",
     "prisma:pull": "prisma db pull"
