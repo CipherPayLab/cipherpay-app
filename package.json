@@ -10,6 +10,7 @@
   "scripts": {
     "build": "pnpm -r --filter './packages/*' build",
     "build:sdk": "pnpm --filter @cipherpay/sdk build",
+    "build:sdk:browser": "pnpm --filter @cipherpay/sdk build:browser && mkdir -p packages/ui/public/sdk && cp packages/sdk/dist/browser/cipherpay-sdk.browser.js packages/ui/public/sdk/",
     "build:server": "pnpm --filter @cipherpay/server build",
     "build:ui": "pnpm --filter @cipherpay/ui build",
     "dev": "concurrently -n server,ui -c blue,green \"pnpm dev:server\" \"npx wait-on http://localhost:8788/healthz && pnpm dev:ui\"",
