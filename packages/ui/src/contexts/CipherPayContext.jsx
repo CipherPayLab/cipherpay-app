@@ -510,9 +510,8 @@ export const CipherPayProvider = ({ children }) => {
                 throw new Error('Please connect your Solana wallet first');
             }
             
-            let sourceOwner = solanaPublicKey.toBase58();
+            const sourceOwner = solanaPublicKey.toBase58();
             let sourceTokenAccount = null;
-            let useDelegate = false;
             
             // If depositing SOL/wSOL, wrap SOL to wSOL first
             if (params.tokenMint === NATIVE_MINT.toBase58() || params.tokenMint === 'So11111111111111111111111111111111111111112') {
@@ -602,7 +601,17 @@ export const CipherPayProvider = ({ children }) => {
                     }
                 }
                 
-                useDelegate = true;
+            } else {
+                // SPL (non-wSOL): delegate transfer from user's ATA for this mint
+                const { PublicKey } = await import('@solana/web3.js');
+                const mintPk = new PublicKey(params.tokenMint);
+                const userAta = getAssociatedTokenAddressSync(
+                    mintPk,
+                    solanaPublicKey,
+                    false,
+                    TOKEN_PROGRAM_ID
+                );
+                sourceTokenAccount = userAta.toBase58();
             }
             
             // Prepare deposit parameters (SDK will call server APIs)
@@ -614,7 +623,6 @@ export const CipherPayProvider = ({ children }) => {
                 memo: params.memo || 0,
                 sourceOwner,
                 sourceTokenAccount,
-                useDelegate,
             };
             
             console.log('[CipherPayContext] createDeposit: Calling service with params:', depositParams);

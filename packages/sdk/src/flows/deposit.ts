@@ -25,10 +25,9 @@ export interface DepositParams {
   // Nonce for depositHash computation
   nonce?: bigint;
   
-  // Delegate mode: source wallet and token account for transfer
-  sourceOwner?: string; // Solana wallet address (base58)
-  sourceTokenAccount?: string; // Associated token account address (base58)
-  useDelegate?: boolean; // If true, relayer will transfer from sourceTokenAccount
+  /** User wallet (base58) and ATA to pull from via SPL delegate (required for Solana deposits). */
+  sourceOwner: string;
+  sourceTokenAccount: string;
   
   // Callback to save note before prepare (for creating encrypted message)
   onNoteReady?: (note: {
@@ -202,7 +201,11 @@ export async function deposit(params: DepositParams): Promise<DepositResult> {
   }
 
   // 7) Submit deposit: Call SERVER API to submit proof
-  // Server will forward to relayer, which will execute the transaction
+  // Server will forward to relayer, which will execute the transaction (SPL delegate from user ATA only)
+  if (!params.sourceOwner || !params.sourceTokenAccount) {
+    throw new Error("sourceOwner and sourceTokenAccount are required for deposit");
+  }
+
   const submitBody: any = {
     operation: 'deposit',
     amount: Number(params.amount.atoms),
@@ -214,18 +217,9 @@ export async function deposit(params: DepositParams): Promise<DepositResult> {
     depositHash: finalDepHashHex,
     commitment: finalCommitmentHex,
     memo: params.memo ? Number(params.memo) : 0,
+    sourceOwner: params.sourceOwner,
+    sourceTokenAccount: params.sourceTokenAccount,
   };
-  
-  // Add delegate mode parameters if provided
-  if (params.sourceOwner) {
-    submitBody.sourceOwner = params.sourceOwner;
-  }
-  if (params.sourceTokenAccount) {
-    submitBody.sourceTokenAccount = params.sourceTokenAccount;
-  }
-  if (params.useDelegate !== undefined) {
-    submitBody.useDelegate = params.useDelegate;
-  }
 
   const submitResponse = await fetch(`${params.serverUrl}/api/v1/submit/deposit`, {
     method: 'POST',

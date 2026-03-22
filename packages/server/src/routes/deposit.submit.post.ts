@@ -60,6 +60,15 @@ export default async function (app: FastifyInstance) {
       }
     }
 
+    if (!finalBody.sourceTokenAccount) {
+      return rep.status(400).send({
+        ok: false,
+        error: "BadRequest",
+        message:
+          "sourceTokenAccount required (user token ATA; delegate-only deposits)",
+      });
+    }
+
     try {
       const headers: Record<string, string> = {
         "content-type": "application/json",

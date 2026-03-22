@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCipherPay } from '../contexts/CipherPayContext';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
@@ -76,6 +76,22 @@ function Dashboard() {
 
   const hasRedirected = useRef(false);
   const hasRefreshed = useRef(false);
+
+  const auditPortalHref = useMemo(() => {
+    const base =
+      import.meta.env.VITE_ZKAUDIT_URL?.trim() ||
+      "https://zkaudit.appfounder.ca";
+    const clean = base.replace(/\/$/, "");
+    try {
+      const token = localStorage.getItem("cipherpay_token");
+      if (token) {
+        return `${clean}/user/activities#cp_token=${encodeURIComponent(token)}`;
+      }
+    } catch {
+      /* ignore */
+    }
+    return `${clean}/user/activities`;
+  }, [isAuthenticated, authUser]);
 
   useEffect(() => {
     // CRITICAL: Redirect to login if not initialized, not connected, or not authenticated
@@ -844,6 +860,14 @@ function Dashboard() {
               </div>
             </div>
             <div className="flex items-center space-x-4">
+              <a
+                href={auditPortalHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm font-medium text-indigo-600 hover:text-indigo-800"
+              >
+                Audit portal
+              </a>
               <div className="text-right space-y-1">
                 {authUser?.username && (
                   <button

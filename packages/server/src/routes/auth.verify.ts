@@ -8,6 +8,14 @@ import { poseidonLoginMsg, verifyBabyJubSig } from "../services/crypto.js";
 const SESSION_COOKIE_NAME =
   process.env.CIPHERPAY_SESSION_COOKIE_NAME ?? "cipherpay_session_nonce";
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24; // 24 hours
+/** e.g. ".appfounder.ca" — required for zkaudit on another subdomain to receive the cookie */
+const SESSION_COOKIE_DOMAIN = process.env.CIPHERPAY_SESSION_COOKIE_DOMAIN?.trim() || "";
+// Secure defaults on in production (HTTPS); set CIPHERPAY_SESSION_COOKIE_SECURE=false to override.
+const SESSION_COOKIE_SECURE =
+  process.env.CIPHERPAY_SESSION_COOKIE_SECURE === "true" ||
+  process.env.CIPHERPAY_SESSION_COOKIE_SECURE === "1" ||
+  (process.env.CIPHERPAY_SESSION_COOKIE_SECURE !== "false" &&
+    process.env.NODE_ENV === "production");
 
 /**
  * POST /auth/verify
@@ -132,14 +140,20 @@ export default async function (app: FastifyInstance) {
             expires_at: expiresAt,
           },
         });
-        const cookieValue = [
+        const cookieParts = [
           `${SESSION_COOKIE_NAME}=${sessionNonce}`,
           "HttpOnly",
           "Path=/",
           "SameSite=Lax",
           `Max-Age=${SESSION_MAX_AGE_SECONDS}`,
-        ].join("; ");
-        rep.header("Set-Cookie", cookieValue);
+        ];
+        if (SESSION_COOKIE_DOMAIN) {
+          cookieParts.push(`Domain=${SESSION_COOKIE_DOMAIN}`);
+        }
+        if (SESSION_COOKIE_SECURE) {
+          cookieParts.push("Secure");
+        }
+        rep.header("Set-Cookie", cookieParts.join("; "));
         req.log.info({ userId: String(user.id) }, "[auth.verify] Session cookie set");
       } catch (cookieErr) {
         req.log.warn({ err: cookieErr }, "[auth.verify] Failed to create session cookie; continuing");

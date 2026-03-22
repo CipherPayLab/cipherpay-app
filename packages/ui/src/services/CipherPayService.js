@@ -1452,10 +1452,8 @@ class CipherPayService {
                 ownerWalletPubKey: identity.ownerWalletPubKey || BigInt(0),
                 ownerWalletPrivKey: identity.ownerWalletPrivKey || BigInt(0),
                 nonce: BigInt(Date.now() % 1000000), // Simple nonce for now
-                // Delegate mode parameters
                 sourceOwner: params.sourceOwner,
                 sourceTokenAccount: params.sourceTokenAccount,
-                useDelegate: params.useDelegate,
             };
 
             // Capture contentHash for proof storage after deposit succeeds
