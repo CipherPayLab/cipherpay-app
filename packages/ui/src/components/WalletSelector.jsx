@@ -1,11 +1,22 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
-import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
+import { Check, CheckCircle2, ChevronDown, Grid2x2, Loader2 } from 'lucide-react';
 
 function WalletSelector({ onWalletConnected, onWalletDisconnected }) {
   const { publicKey, connected, disconnect, wallet, wallets, select, connecting, connect } = useWallet();
   const [showWalletList, setShowWalletList] = useState(false);
   const prevConnectedRef = useRef(false); // Track previous connection state
+
+  const uniqueWallets = wallets.reduce((unique, w) => {
+    if (!unique.find((u) => u.adapter.name === w.adapter.name)) {
+      unique.push(w);
+    }
+    return unique;
+  }, []);
+
+  // The wallet shown in the "Selected wallet" slot: whatever is actively
+  // selected, falling back to the first (highest-priority) detected wallet.
+  const preferredWallet = wallet || uniqueWallets[0];
 
   useEffect(() => {
     // Only call onWalletConnected when connection changes from false to true
@@ -39,9 +50,10 @@ function WalletSelector({ onWalletConnected, onWalletDisconnected }) {
 
   const handleConnect = async () => {
     try {
-      if (wallet?.adapter && !connected) {
-        // Trigger the wallet connection
-        // This will prompt the user to approve the connection in their wallet extension
+      if (preferredWallet?.adapter && !connected) {
+        if (wallet?.adapter?.name !== preferredWallet.adapter.name) {
+          await select(preferredWallet.adapter.name);
+        }
         await connect();
       }
     } catch (error) {
@@ -67,182 +79,167 @@ function WalletSelector({ onWalletConnected, onWalletDisconnected }) {
   // If wallet is connected, show connected state
   if (connected && publicKey) {
     return (
-      <div className="space-y-4">
-        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <div className="flex-shrink-0">
-                <div className="h-10 w-10 rounded-full bg-green-500 flex items-center justify-center">
-                  <svg className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                </div>
-              </div>
-              <div>
-                <p className="text-sm font-medium text-green-800">
-                  {wallet?.adapter?.name || 'Wallet'} Connected
-                </p>
-                <p className="text-xs text-green-600 font-mono">
-                  {publicKey.toBase58().slice(0, 8)}...{publicKey.toBase58().slice(-8)}
-                </p>
-              </div>
+      <div className="rounded-xl border border-green-500/20 bg-green-500/10 p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-green-500/20">
+              <Check className="h-5 w-5 text-green-400" />
             </div>
-            <button
-              onClick={handleDisconnect}
-              className="px-3 py-1 text-sm font-medium text-green-700 bg-green-100 rounded-md hover:bg-green-200 transition-colors"
-            >
-              Disconnect
-            </button>
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-green-300">
+                {wallet?.adapter?.name || 'Wallet'} Connected
+              </p>
+              <p className="truncate font-mono text-xs text-green-400/70">
+                {publicKey.toBase58().slice(0, 8)}...{publicKey.toBase58().slice(-8)}
+              </p>
+            </div>
           </div>
+          <button
+            onClick={handleDisconnect}
+            className="flex-shrink-0 rounded-md border border-green-500/30 px-3 py-1 text-sm font-medium text-green-300 transition-colors hover:bg-green-500/20"
+          >
+            Disconnect
+          </button>
         </div>
       </div>
     );
   }
 
-  // Show wallet selection UI
+  if (uniqueWallets.length === 0) {
+    return (
+      <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-center">
+        <p className="text-sm text-gray-400">
+          No wallets detected. Please install a Solana wallet extension like Phantom or Solflare.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
-      <div>
-        <h3 className="text-sm font-medium text-gray-700 mb-3">
-          {wallet?.adapter?.name ? `Selected: ${wallet.adapter.name}` : 'Select a Wallet'}
-        </h3>
-        
-        {/* Use WalletMultiButton for quick access - this handles Standard Wallets automatically */}
-        <div className="flex justify-center mb-4">
-          <div className="wallet-adapter-button-wrapper" style={{ minHeight: '40px' }}>
-            {wallet?.adapter ? (
-              <button
-                onClick={handleConnect}
-                disabled={connecting}
-                className="inline-flex items-center justify-center px-6 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                {connecting ? (
-                  <>
-                    <span className="inline-block animate-spin mr-2">⏳</span>
-                    Connecting...
-                  </>
-                ) : (
-                  `Connect ${wallet.adapter.name}`
-                )}
-              </button>
-            ) : (
-              <WalletMultiButton />
+      <div className="space-y-2">
+        <h3 className="text-sm font-medium text-gray-400">Selected wallet</h3>
+        <button
+          type="button"
+          onClick={() => setShowWalletList((v) => !v)}
+          className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-left transition-colors hover:border-white/20"
+        >
+          <div className="flex min-w-0 items-center gap-3">
+            {preferredWallet?.adapter?.icon && (
+              <img
+                src={preferredWallet.adapter.icon}
+                alt={preferredWallet.adapter.name}
+                className="h-8 w-8 flex-shrink-0 rounded-full"
+              />
+            )}
+            <span className="truncate text-sm font-medium text-white">
+              {preferredWallet?.adapter?.name}
+            </span>
+            {preferredWallet?.adapter?.name?.toLowerCase().includes('phantom') && (
+              <span className="flex-shrink-0 rounded-full bg-green-500/15 px-2 py-0.5 text-xs font-medium text-green-400">
+                Recommended
+              </span>
             )}
           </div>
-        </div>
-        
-        {/* Fallback: If no wallets are available, show a message */}
-        {wallets.length === 0 && !connecting && (
-          <div className="text-center py-4">
-            <p className="text-sm text-gray-500">
-              No wallets detected. Please install a Solana wallet extension like Phantom or Solflare.
-            </p>
-          </div>
-        )}
+          <ChevronDown
+            className={`h-4 w-4 flex-shrink-0 text-gray-400 transition-transform ${showWalletList ? 'rotate-180' : ''}`}
+          />
+        </button>
+      </div>
 
-        {/* Custom wallet list for additional wallets */}
-        {wallets.length > 0 && (
+      <button
+        onClick={handleConnect}
+        disabled={connecting}
+        className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-500 to-purple-600 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {connecting ? (
           <>
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-gray-300" />
-              </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-gray-50 text-gray-500">Or choose from list</span>
-              </div>
-            </div>
-
-            {showWalletList ? (
-              <div className="space-y-2">
-                {/* Deduplicate wallets by adapter name */}
-                {wallets
-                  .reduce((unique, wallet) => {
-                    // Keep only the first occurrence of each wallet name
-                    if (!unique.find(w => w.adapter.name === wallet.adapter.name)) {
-                      unique.push(wallet);
-                    }
-                    return unique;
-                  }, [])
-                  .map((walletOption) => {
-                  const isInstalled = walletOption.readyState === 'Installed' || walletOption.readyState === 'Loadable';
-                  const isSelected = wallet?.adapter?.name === walletOption.adapter.name;
-                  
-                  // Determine status text
-                  let statusText = 'Not detected';
-                  let statusColor = 'text-gray-500';
-                  
-                  if (walletOption.readyState === 'Installed') {
-                    statusText = 'Installed';
-                    statusColor = 'text-green-600';
-                  } else if (walletOption.readyState === 'Loadable') {
-                    statusText = 'Available';
-                    statusColor = 'text-blue-600';
-                  }
-
-                  return (
-                    <button
-                      key={walletOption.adapter.name}
-                      onClick={() => handleWalletSelect(walletOption.adapter.name)}
-                      disabled={connecting || isSelected || !isInstalled}
-                      className={`w-full flex items-center justify-between p-3 rounded-lg border transition-colors ${
-                        isSelected
-                          ? 'border-indigo-500 bg-indigo-50'
-                          : isInstalled
-                          ? 'border-gray-300 bg-white hover:border-indigo-300 hover:bg-indigo-50'
-                          : 'border-gray-200 bg-gray-50 opacity-60'
-                      }`}
-                    >
-                      <div className="flex items-center space-x-3 flex-1">
-                        {walletOption.adapter.icon && (
-                          <img
-                            src={walletOption.adapter.icon}
-                            alt={walletOption.adapter.name}
-                            className="h-8 w-8 flex-shrink-0"
-                          />
-                        )}
-                        <div className="text-left min-w-0">
-                          <p className="text-sm font-medium text-gray-900">
-                            {walletOption.adapter.name}
-                          </p>
-                          <p className={`text-xs font-medium ${statusColor}`}>
-                            {statusText}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center space-x-2 ml-2 flex-shrink-0">
-                        {isInstalled && (
-                          <svg className="h-4 w-4 text-green-500" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                          </svg>
-                        )}
-                        {isSelected && (
-                          <svg className="h-5 w-5 text-indigo-600" fill="currentColor" viewBox="0 0 20 20">
-                            <path
-                              fillRule="evenodd"
-                              d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                              clipRule="evenodd"
-                            />
-                          </svg>
-                        )}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            ) : (
-              <button
-                onClick={() => setShowWalletList(true)}
-                className="w-full text-sm text-indigo-600 hover:text-indigo-700 font-medium py-2"
-              >
-                Show All Wallets ({wallets.length})
-              </button>
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Connecting...
+          </>
+        ) : (
+          <>
+            {preferredWallet?.adapter?.icon && (
+              <img src={preferredWallet.adapter.icon} alt="" className="h-5 w-5 rounded-full" />
             )}
+            Connect {preferredWallet?.adapter?.name}
           </>
         )}
+      </button>
+
+      <div className="relative">
+        <div className="absolute inset-0 flex items-center">
+          <div className="w-full border-t border-white/10" />
+        </div>
+        <div className="relative flex justify-center text-sm">
+          <span className="bg-[#0d1220] px-2 text-gray-500">or choose from list</span>
+        </div>
       </div>
+
+      {showWalletList ? (
+        <div className="space-y-2">
+          {uniqueWallets.map((walletOption) => {
+            const isInstalled = walletOption.readyState === 'Installed' || walletOption.readyState === 'Loadable';
+            const isSelected = preferredWallet?.adapter?.name === walletOption.adapter.name;
+
+            let statusText = 'Not detected';
+            let statusColor = 'text-gray-500';
+
+            if (walletOption.readyState === 'Installed') {
+              statusText = 'Installed';
+              statusColor = 'text-green-400';
+            } else if (walletOption.readyState === 'Loadable') {
+              statusText = 'Available';
+              statusColor = 'text-blue-400';
+            }
+
+            return (
+              <button
+                key={walletOption.adapter.name}
+                onClick={() => handleWalletSelect(walletOption.adapter.name)}
+                disabled={connecting || !isInstalled}
+                className={`flex w-full items-center justify-between rounded-xl border p-3 transition-colors ${
+                  isSelected
+                    ? 'border-blue-500/50 bg-blue-500/10'
+                    : isInstalled
+                    ? 'border-white/10 bg-white/5 hover:border-white/20 hover:bg-white/10'
+                    : 'border-white/5 bg-white/[0.02] opacity-50'
+                }`}
+              >
+                <div className="flex flex-1 items-center gap-3">
+                  {walletOption.adapter.icon && (
+                    <img
+                      src={walletOption.adapter.icon}
+                      alt={walletOption.adapter.name}
+                      className="h-8 w-8 flex-shrink-0 rounded-full"
+                    />
+                  )}
+                  <div className="min-w-0 text-left">
+                    <p className="text-sm font-medium text-white">{walletOption.adapter.name}</p>
+                    <p className={`text-xs font-medium ${statusColor}`}>{statusText}</p>
+                  </div>
+                </div>
+                {isSelected && (
+                  <CheckCircle2 className="ml-2 h-5 w-5 flex-shrink-0 text-blue-400" />
+                )}
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <button
+          onClick={() => setShowWalletList(true)}
+          className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-gray-300 transition-colors hover:border-white/20 hover:bg-white/10"
+        >
+          <span className="flex items-center gap-2">
+            <Grid2x2 className="h-4 w-4" />
+            Show all wallets
+          </span>
+          <ChevronDown className="h-4 w-4 -rotate-90" />
+        </button>
+      )}
     </div>
   );
 }
 
 export default WalletSelector;
-

@@ -1,9 +1,31 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useWallet } from '@solana/wallet-adapter-react';
+import { Mail, ShieldCheck, Zap, Wallet, Check, X, Loader2 } from 'lucide-react';
+import { FaXTwitter, FaDiscord, FaGithub } from 'react-icons/fa6';
 import { useCipherPay } from '../contexts/CipherPayContext';
 import WalletSelector from './WalletSelector';
 import authService from '../services/authService';
+
+const NAV_LINKS = ['Features', 'Security', 'Docs', 'About'];
+const FOOTER_LINKS = ['Privacy', 'Terms', 'Docs', 'Status', 'Support'];
+const FEATURES = [
+  {
+    icon: ShieldCheck,
+    title: 'Zero-knowledge privacy',
+    description: 'Your data stays private, while proof ensures trust.',
+  },
+  {
+    icon: Zap,
+    title: 'Fast, secure settlement',
+    description: 'Built for speed with cryptographic guarantees.',
+  },
+  {
+    icon: Wallet,
+    title: 'Wallet-native experience',
+    description: 'Connect your wallet and start in seconds.',
+  },
+];
 
 function Login() {
   const [isConnecting, setIsConnecting] = useState(false);
@@ -38,12 +60,12 @@ function Login() {
     if (currentPath !== '/') {
       return;
     }
-    
+
     // Don't redirect during initialization
     if (!isInitialized || loading) {
       return;
     }
-    
+
     // ONLY redirect if:
     // 1. User authenticated in this session (via handleWalletConnected or handleSignIn)
     // 2. AND user is connected
@@ -54,7 +76,7 @@ function Login() {
         navigate('/dashboard', { replace: true });
       }, 0);
     }
-    
+
     // Reset flags if user disconnects
     if (!isAuthenticated || !isConnected) {
       hasNavigated.current = false;
@@ -68,11 +90,11 @@ function Login() {
       setUsernameAvailable(null);
       return;
     }
-    
+
     setCheckingUsername(true);
     try {
       const result = await authService.checkUsernameAvailability(value);
-      
+
       if (!result.valid) {
         setUsernameError(result.error || 'Invalid username format');
         setUsernameAvailable(false);
@@ -98,12 +120,12 @@ function Login() {
     setUsername(value);
     setUsernameError('');
     setUsernameAvailable(null);
-    
+
     // Clear previous timeout
     if (usernameCheckTimeout.current) {
       clearTimeout(usernameCheckTimeout.current);
     }
-    
+
     // Debounce username check (500ms)
     if (value && value.length >= 3) {
       usernameCheckTimeout.current = setTimeout(() => {
@@ -120,7 +142,7 @@ function Login() {
       alert('CipherPay service is still initializing. Please wait...');
       return;
     }
-    
+
     // Check if user just disconnected - don't auto-authenticate in this case
     // This prevents redirect loop when user disconnects and lands on login page
     try {
@@ -134,7 +156,7 @@ function Login() {
     } catch (e) {
       // Ignore sessionStorage errors
     }
-    
+
     // For new users, require username
     if (isNewUser) {
       if (!username || username.length < 3) {
@@ -157,19 +179,19 @@ function Login() {
         return;
       }
     }
-    
+
     try {
       setIsConnecting(true);
       clearError();
-      
+
       console.log('[Login] handleWalletConnected: walletAddress parameter:', walletAddress);
       console.log('[Login] handleWalletConnected: username:', username || '(existing user)');
-      
+
       // Connect wallet to CipherPay service using the selected wallet address
       if (!isConnected) {
         await connectWallet();
       }
-      
+
       // Authenticate - pass username for new users
       if (isNewUser && username) {
         console.log('[Login] Signing up new user with username:', username);
@@ -178,17 +200,17 @@ function Login() {
         console.log('[Login] Signing in existing user');
         await signIn(walletAddress);
       }
-      
+
       // Mark that user authenticated in this session
       sessionAuthenticatedRef.current = true;
-      
+
       navigate('/dashboard');
     } catch (err) {
       console.error('Failed to connect and authenticate:', err);
-      
+
       // Check if user doesn't exist (trying to sign in without account)
       const errorData = err.response?.data;
-      if (errorData?.error === 'missing_username' || 
+      if (errorData?.error === 'missing_username' ||
           errorData?.message?.includes('Username is required for new users')) {
         // User tried to sign in but doesn't have an account
         alert('You have to sign up firstly');
@@ -196,7 +218,7 @@ function Login() {
         await disconnectWallet(); // Disconnect so they can reconnect with username
         return;
       }
-      
+
       // Check if error is due to missing username
       if (err.message?.includes('username') || err.message?.includes('Username')) {
         alert(`Username required: ${err.message}. Please enter a username and try again.`);
@@ -229,16 +251,16 @@ function Login() {
     try {
       setIsConnecting(true);
       clearError();
-      
+
       // Get wallet address from the connected wallet
       const walletAddr = publicKey.toBase58();
       console.log('[Login] handleSignIn: Using wallet address:', walletAddr);
-      
+
       // Connect wallet to CipherPay service if not already connected
       if (!isConnected) {
         await connectWallet();
       }
-      
+
       // Authenticate with server, passing the wallet address directly
       // For new users signing up through the form (not auto-connect), pass username
       if (isNewUser && username) {
@@ -246,10 +268,10 @@ function Login() {
       } else {
         await signIn(walletAddr);
       }
-      
+
       // Mark that user authenticated in this session
       sessionAuthenticatedRef.current = true;
-      
+
       navigate('/dashboard');
     } catch (err) {
       console.error('Sign in failed:', err);
@@ -261,174 +283,270 @@ function Login() {
 
   if (loading && !isInitialized) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="max-w-md w-full space-y-8">
-          <div className="text-center">
-            <h2 className="text-3xl font-bold text-gray-900">Initializing CipherPay...</h2>
-            <p className="mt-2 text-sm text-gray-600">Please wait while we set up your secure environment.</p>
-          </div>
+      <div className="flex min-h-screen items-center justify-center bg-[#05070f]">
+        <div className="w-full max-w-md space-y-8 text-center">
+          <h2 className="text-3xl font-bold text-white">Initializing CipherPay...</h2>
+          <p className="mt-2 text-sm text-gray-400">Please wait while we set up your secure environment.</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        <div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-            Welcome to CipherPay
-          </h2>
-          <p className="mt-2 text-center text-sm text-gray-600">
-            Privacy-preserving payments powered by zero-knowledge proofs
+    <div
+      className="min-h-screen bg-[#05070f] bg-cover bg-center bg-no-repeat text-white"
+      style={{ backgroundImage: "url('/images/cipherpay-hero-bg.png')" }}
+    >
+      <div className="min-h-screen bg-[#05070f]/60">
+        {/* Header */}
+        <header className="border-b border-white/10">
+          <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
+            <img src="/images/Header-Footer-logo.png" alt="CipherPay" className="h-8 w-auto" />
+            <nav className="hidden items-center gap-8 md:flex">
+              {NAV_LINKS.map((link) => (
+                <a key={link} href="#" className="text-sm text-gray-300 transition-colors hover:text-white">
+                  {link}
+                </a>
+              ))}
+            </nav>
+            <div className="flex items-center gap-3">
+              <a
+                href="#"
+                className="flex items-center gap-2 rounded-lg border border-white/15 px-4 py-2 text-sm text-gray-200 transition-colors hover:border-white/30"
+              >
+                <Mail className="h-4 w-4" />
+                Contact
+              </a>
+              <a
+                href="#"
+                className="flex items-center gap-2 rounded-lg border border-white/15 px-4 py-2 text-sm text-gray-200 transition-colors hover:border-white/30"
+              >
+                <span className="h-2 w-2 rounded-full bg-green-400" />
+                Status
+              </a>
+            </div>
+          </div>
+        </header>
+
+        {/* Hero + Auth */}
+        <main className="mx-auto grid max-w-7xl gap-16 px-6 py-16 lg:grid-cols-2 lg:items-center">
+          {/* Left: marketing copy */}
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full border border-blue-500/30 px-4 py-1.5 text-sm text-blue-300">
+              <ShieldCheck className="h-4 w-4" />
+              Privacy by design. Trust by proof.
+            </div>
+
+            <h1 className="mt-6 text-5xl font-extrabold leading-tight tracking-tight">
+              Private Payments,
+              <br />
+              <span className="bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
+                Verifiable Trust
+              </span>
+            </h1>
+
+            <p className="mt-6 max-w-md text-gray-400">
+              CipherPay enables privacy-preserving payments powered by zero-knowledge proofs.
+            </p>
+
+            <div className="mt-10 space-y-6">
+              {FEATURES.map(({ icon: Icon, title, description }) => (
+                <div key={title} className="flex items-start gap-4">
+                  <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5">
+                    <Icon className="h-5 w-5 text-blue-400" />
+                  </div>
+                  <div>
+                    <p className="font-medium text-white">{title}</p>
+                    <p className="text-sm text-gray-400">{description}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Right: auth card */}
+          <div className="rounded-2xl border border-white/10 bg-[#0d1220]/90 shadow-2xl backdrop-blur">
+            <div className="flex border-b border-white/10">
+              <button
+                type="button"
+                onClick={() => setIsNewUser(false)}
+                className={`flex-1 border-b-2 py-4 text-sm font-medium transition-colors ${
+                  !isNewUser ? 'border-blue-500 text-white' : 'border-transparent text-gray-500 hover:text-gray-300'
+                }`}
+              >
+                Sign In
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsNewUser(true)}
+                className={`flex-1 border-b-2 py-4 text-sm font-medium transition-colors ${
+                  isNewUser ? 'border-blue-500 text-white' : 'border-transparent text-gray-500 hover:text-gray-300'
+                }`}
+              >
+                Sign Up
+              </button>
+            </div>
+
+            <div className="space-y-6 p-8">
+              {error && (
+                <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4">
+                  <h3 className="text-sm font-medium text-red-300">Connection Error</h3>
+                  <p className="mt-1 text-sm text-red-400">{error}</p>
+                </div>
+              )}
+
+              {/* Wallet-first access blurb */}
+              <div className="flex items-start gap-3">
+                <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5">
+                  <Wallet className="h-5 w-5 text-blue-400" />
+                </div>
+                <div>
+                  <p className="font-medium text-white">Wallet-first access</p>
+                  <p className="text-sm text-gray-400">Connect your wallet to securely sign in.</p>
+                </div>
+              </div>
+
+              {/* Username input for new users */}
+              {isNewUser && (
+                <div className="space-y-2">
+                  <label htmlFor="username" className="block text-sm font-medium text-gray-300">
+                    Choose your username
+                  </label>
+                  <div className="relative">
+                    <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                      <span className="text-gray-500 sm:text-sm">@</span>
+                    </div>
+                    <input
+                      type="text"
+                      id="username"
+                      value={username}
+                      onChange={handleUsernameChange}
+                      placeholder="alice"
+                      className={`block w-full rounded-lg border bg-white/5 py-2 pl-7 pr-10 text-white placeholder-gray-600 focus:outline-none focus:ring-2 sm:text-sm ${
+                        usernameError
+                          ? 'border-red-500/40 focus:border-red-500 focus:ring-red-500/30'
+                          : usernameAvailable
+                          ? 'border-green-500/40 focus:border-green-500 focus:ring-green-500/30'
+                          : 'border-white/10 focus:border-blue-500 focus:ring-blue-500/30'
+                      }`}
+                      required={isNewUser}
+                      minLength={3}
+                      maxLength={32}
+                      pattern="[a-zA-Z0-9_-]+"
+                    />
+                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
+                      {checkingUsername && <Loader2 className="h-5 w-5 animate-spin text-gray-500" />}
+                      {!checkingUsername && usernameAvailable === true && (
+                        <Check className="h-5 w-5 text-green-400" />
+                      )}
+                      {!checkingUsername && usernameAvailable === false && (
+                        <X className="h-5 w-5 text-red-400" />
+                      )}
+                    </div>
+                  </div>
+                  {usernameError && <p className="text-sm text-red-400">{usernameError}</p>}
+                  {usernameAvailable === true && (
+                    <p className="text-sm text-green-400">✓ @{username} is available!</p>
+                  )}
+                  <p className="text-xs text-gray-500">3-32 characters, letters, numbers, underscore, or dash</p>
+                </div>
+              )}
+
+              {/* Wallet Selection */}
+              <WalletSelector
+                onWalletConnected={handleWalletConnected}
+                onWalletDisconnected={handleWalletDisconnected}
+              />
+
+              {walletConnected && publicKey && (
+                <>
+                  <div className="relative">
+                    <div className="absolute inset-0 flex items-center">
+                      <div className="w-full border-t border-white/10" />
+                    </div>
+                    <div className="relative flex justify-center text-sm">
+                      <span className="bg-[#0d1220] px-2 text-gray-500">Or continue with</span>
+                    </div>
+                  </div>
+
+                  <form className="space-y-4" onSubmit={handleSignIn}>
+                    <p className="text-center text-sm text-gray-400">
+                      Sign in using your CipherPay identity. Your wallet is already connected.
+                    </p>
+                    <button
+                      type="submit"
+                      disabled={isConnecting || loading || !walletConnected}
+                      className="flex w-full items-center justify-center rounded-lg bg-gradient-to-r from-blue-500 to-purple-600 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {isConnecting || loading ? 'Signing in...' : 'Sign in'}
+                    </button>
+                  </form>
+                </>
+              )}
+
+              <div className="border-t border-white/10 pt-6 text-center text-sm text-gray-400">
+                {isNewUser ? (
+                  <>
+                    Already have an account?{' '}
+                    <button
+                      type="button"
+                      onClick={() => setIsNewUser(false)}
+                      className="font-medium text-blue-400 hover:text-blue-300"
+                    >
+                      Sign in
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    Don't have an account?{' '}
+                    <button
+                      type="button"
+                      onClick={() => setIsNewUser(true)}
+                      className="font-medium text-blue-400 hover:text-blue-300"
+                    >
+                      Sign up
+                    </button>
+                  </>
+                )}
+                <p className="mt-2 text-xs text-gray-500">
+                  By continuing, you agree to our <a href="#" className="text-gray-400 hover:text-gray-300">Terms</a> and{' '}
+                  <a href="#" className="text-gray-400 hover:text-gray-300">Privacy Policy</a>.
+                </p>
+              </div>
+            </div>
+          </div>
+        </main>
+
+        {/* Footer */}
+        <footer className="border-t border-white/10">
+          <div className="mx-auto flex max-w-7xl flex-col items-center gap-6 px-6 py-8 md:flex-row md:justify-between">
+            <img src="/images/Header-Footer-logo.png" alt="CipherPay" className="h-7 w-auto" />
+            <nav className="flex flex-wrap items-center justify-center gap-6">
+              {FOOTER_LINKS.map((link) => (
+                <a key={link} href="#" className="text-sm text-gray-400 hover:text-gray-200">
+                  {link}
+                </a>
+              ))}
+            </nav>
+            <div className="flex items-center gap-4 text-gray-400">
+              <a href="#" aria-label="Twitter" className="hover:text-white">
+                <FaXTwitter className="h-5 w-5" />
+              </a>
+              <a href="#" aria-label="Discord" className="hover:text-white">
+                <FaDiscord className="h-5 w-5" />
+              </a>
+              <a href="#" aria-label="GitHub" className="hover:text-white">
+                <FaGithub className="h-5 w-5" />
+              </a>
+            </div>
+          </div>
+          <p className="pb-8 text-center text-xs text-gray-500">
+            © {new Date().getFullYear()} CipherPay. All rights reserved.
           </p>
-        </div>
-
-        {error && (
-          <div className="bg-red-50 border border-red-200 rounded-md p-4">
-            <div className="flex">
-              <div className="ml-3">
-                <h3 className="text-sm font-medium text-red-800">Connection Error</h3>
-                <div className="mt-2 text-sm text-red-700">
-                  <p>{error}</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div className="mt-8 space-y-6">
-          {/* Toggle between Sign In / Sign Up */}
-          <div className="flex rounded-md shadow-sm mb-6" role="group">
-            <button
-              type="button"
-              onClick={() => setIsNewUser(false)}
-              className={`flex-1 px-4 py-2 text-sm font-medium border ${
-                !isNewUser
-                  ? 'bg-indigo-600 text-white border-indigo-600'
-                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-              } rounded-l-lg focus:z-10 focus:ring-2 focus:ring-indigo-500`}
-            >
-              Sign In
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsNewUser(true)}
-              className={`flex-1 px-4 py-2 text-sm font-medium border-t border-b border-r ${
-                isNewUser
-                  ? 'bg-indigo-600 text-white border-indigo-600'
-                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-              } rounded-r-lg focus:z-10 focus:ring-2 focus:ring-indigo-500`}
-            >
-              Sign Up
-            </button>
-          </div>
-
-          {/* Username input for new users */}
-          {isNewUser && (
-            <div className="space-y-2">
-              <label htmlFor="username" className="block text-sm font-medium text-gray-700">
-                Choose your username
-              </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <span className="text-gray-500 sm:text-sm">@</span>
-                </div>
-                <input
-                  type="text"
-                  id="username"
-                  value={username}
-                  onChange={handleUsernameChange}
-                  placeholder="alice"
-                  className={`block w-full pl-7 pr-10 py-2 border ${
-                    usernameError
-                      ? 'border-red-300 focus:ring-red-500 focus:border-red-500'
-                      : usernameAvailable
-                      ? 'border-green-300 focus:ring-green-500 focus:border-green-500'
-                      : 'border-gray-300 focus:ring-indigo-500 focus:border-indigo-500'
-                  } rounded-md shadow-sm focus:outline-none sm:text-sm`}
-                  required={isNewUser}
-                  minLength={3}
-                  maxLength={32}
-                  pattern="[a-zA-Z0-9_-]+"
-                />
-                <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                  {checkingUsername && (
-                    <svg className="animate-spin h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                  )}
-                  {!checkingUsername && usernameAvailable === true && (
-                    <svg className="h-5 w-5 text-green-500" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                    </svg>
-                  )}
-                  {!checkingUsername && usernameAvailable === false && (
-                    <svg className="h-5 w-5 text-red-500" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                    </svg>
-                  )}
-                </div>
-              </div>
-              {usernameError && (
-                <p className="mt-1 text-sm text-red-600">{usernameError}</p>
-              )}
-              {usernameAvailable === true && (
-                <p className="mt-1 text-sm text-green-600">✓ @{username} is available!</p>
-              )}
-              <p className="mt-1 text-xs text-gray-500">
-                3-32 characters, letters, numbers, underscore, or dash
-              </p>
-            </div>
-          )}
-
-          {/* Wallet Selection */}
-          <WalletSelector
-            onWalletConnected={handleWalletConnected}
-            onWalletDisconnected={handleWalletDisconnected}
-          />
-
-          {walletConnected && publicKey && (
-            <>
-              <div className="relative">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-gray-300" />
-                </div>
-                <div className="relative flex justify-center text-sm">
-                  <span className="px-2 bg-gray-50 text-gray-500">Or continue with</span>
-                </div>
-              </div>
-
-              {/* Sign In Form */}
-              <form className="space-y-6" onSubmit={handleSignIn}>
-                <div>
-                  <p className="text-sm text-gray-600 text-center">
-                    Sign in using your CipherPay identity. Your wallet is already connected.
-                  </p>
-                </div>
-                <div>
-                  <button
-                    type="submit"
-                    disabled={isConnecting || loading || !walletConnected}
-                    className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {isConnecting || loading ? 'Signing in...' : 'Sign in'}
-                  </button>
-                </div>
-              </form>
-            </>
-          )}
-
-          <div className="text-center">
-            <a href="/register" className="font-medium text-indigo-600 hover:text-indigo-500">
-              Don't have an account? Sign up
-            </a>
-          </div>
-        </div>
+        </footer>
       </div>
     </div>
   );
 }
 
-export default Login; 
+export default Login;
