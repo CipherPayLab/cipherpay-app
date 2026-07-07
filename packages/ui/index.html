@@ -26,8 +26,8 @@
       }
     })();
   </script>
-  <!-- Load CipherPay SDK bundle - includes Buffer and other polyfills. ?v=2 cache-busts for auth fix (getAuthPubKeyFromPrivKey) -->
-  <script src="/sdk/cipherpay-sdk.browser.js?v=2"></script>
+  <!-- Load CipherPay SDK bundle - includes Buffer and other polyfills. ?v=3 cache-busts for Buffer.from/toString hex+base64 encoding fix -->
+  <script src="/sdk/cipherpay-sdk.browser.js?v=3"></script>
   <!-- Verify Buffer is loaded -->
   <script>
     if (typeof Buffer !== 'undefined' && Buffer.prototype.writeUInt32BE) {

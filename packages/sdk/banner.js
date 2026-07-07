@@ -186,6 +186,22 @@
     
     BufferImpl.from = function(data, encoding) {
       if (typeof data === 'string') {
+        if (encoding === 'hex') {
+          var hex = data.length % 2 === 0 ? data : '0' + data;
+          var hexBytes = new Uint8Array(hex.length / 2);
+          for (var hi = 0; hi < hexBytes.length; hi++) {
+            hexBytes[hi] = parseInt(hex.substr(hi * 2, 2), 16);
+          }
+          return new BufferImpl(hexBytes);
+        }
+        if (encoding === 'base64') {
+          var binaryStr = atob(data);
+          var b64Bytes = new Uint8Array(binaryStr.length);
+          for (var bi = 0; bi < binaryStr.length; bi++) {
+            b64Bytes[bi] = binaryStr.charCodeAt(bi);
+          }
+          return new BufferImpl(b64Bytes);
+        }
         return new BufferImpl(new TextEncoder().encode(data));
       }
       if (data instanceof Uint8Array || data instanceof ArrayBuffer) {
@@ -195,6 +211,25 @@
         return new BufferImpl(data);
       }
       return new BufferImpl(0);
+    };
+
+    BufferImpl.prototype.toString = function(encoding, start, end) {
+      var bytes = this.subarray(start || 0, end !== undefined ? end : this.length);
+      if (encoding === 'hex') {
+        var hexOut = '';
+        for (var i = 0; i < bytes.length; i++) {
+          hexOut += bytes[i].toString(16).padStart(2, '0');
+        }
+        return hexOut;
+      }
+      if (encoding === 'base64') {
+        var binary = '';
+        for (var j = 0; j < bytes.length; j++) {
+          binary += String.fromCharCode(bytes[j]);
+        }
+        return btoa(binary);
+      }
+      return new TextDecoder().decode(bytes);
     };
     
     BufferImpl.alloc = function(size, fill) {
