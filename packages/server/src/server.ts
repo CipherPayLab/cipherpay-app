@@ -38,6 +38,10 @@ import accountOverview from "./routes/account.overview.post.js";
 import messagesGet from "./routes/messages.get.js";
 import relayerInfo from "./routes/relayer.info.get.js";
 import usersNoteEncPubKey from "./routes/users.get.note-enc-pub-key.js";
+import walletBalance from "./routes/wallet.balance.get.js";
+import walletDelegateApproved from "./routes/wallet.delegate-approved.get.js";
+import walletBlockhash from "./routes/wallet.blockhash.get.js";
+import walletSubmitTransaction from "./routes/wallet.submit-transaction.post.js";
 
 const app = Fastify({ 
   logger: true,
@@ -174,6 +178,10 @@ await app.register(accountOverview);
 await app.register(messagesGet);
 await app.register(relayerInfo);
 await app.register(usersNoteEncPubKey);
+await app.register(walletBalance);
+await app.register(walletDelegateApproved);
+await app.register(walletBlockhash);
+await app.register(walletSubmitTransaction);
 
 // Graceful shutdown
 process.on("SIGTERM", async () => {
