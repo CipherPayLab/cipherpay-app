@@ -436,15 +436,11 @@ export const CipherPayProvider = ({ children }) => {
             setError(null);
             
             // Validate that required parameters are provided
-            if (!params.connection) {
-                throw new Error('Connection is required');
-            }
             if (!params.wallet || !params.wallet.publicKey) {
                 throw new Error('Please connect your wallet first');
             }
-            
+
             console.log('[CipherPayContext] approveRelayerDelegate: Calling service with params:', {
-                connection: !!params.connection,
                 wallet: !!params.wallet,
                 walletPublicKey: params.wallet?.publicKey?.toString(),
                 tokenMint: params.tokenMint,

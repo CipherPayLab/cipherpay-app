@@ -1,8 +1,13 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCipherPay } from '../contexts/CipherPayContext';
-import { useConnection, useWallet } from '@solana/wallet-adapter-react';
-import { getAssociatedTokenAddressSync, NATIVE_MINT } from '@solana/spl-token';
+import { useWallet } from '@solana/wallet-adapter-react';
+import {
+  LayoutDashboard, ArrowDownToLine, ArrowLeftRight, ArrowUpFromLine, FileStack,
+  Radio, Cpu, KeyRound, ClipboardList, Bell, Lock, Settings as SettingsIcon, LifeBuoy,
+  Wallet as WalletIcon, User, ShieldCheck, Copy, RefreshCw, LogOut, ExternalLink,
+  Check, X, Info, Loader2, ArrowRight, AlertTriangle, ChevronDown,
+} from 'lucide-react';
 import SolanaStatus from './SolanaStatus';
 import SDKStatus from './SDKStatus';
 import authService from '../services/authService';
@@ -11,7 +16,6 @@ import { parseFriendlyErrorMessage } from '../utils/errorMessages';
 
 function Dashboard() {
   const navigate = useNavigate();
-  const { connection } = useConnection();
   const wallet = useWallet();
   const {
     isInitialized,
@@ -52,6 +56,7 @@ function Dashboard() {
   const [isDelegateApproved, setIsDelegateApproved] = useState(false);
   const delegateCheckCompleteRef = useRef(false); // Once we have on-chain result, don't let fallback override
   const [walletBalance, setWalletBalance] = useState(0);
+  const [walletBalanceError, setWalletBalanceError] = useState(null);
   const [copiedItem, setCopiedItem] = useState(null); // Track what was copied for feedback
   const [ataBalance, setAtaBalance] = useState(0);
   const [showNotesModal, setShowNotesModal] = useState(false);
@@ -76,6 +81,11 @@ function Dashboard() {
 
   const hasRedirected = useRef(false);
   const hasRefreshed = useRef(false);
+  const overviewRef = useRef(null);
+  const solanaStatusRef = useRef(null);
+  const sdkStatusRef = useRef(null);
+
+  const scrollToRef = (ref) => ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   const auditPortalHref = useMemo(() => {
     const base =
@@ -135,11 +145,10 @@ function Dashboard() {
   // Check on-chain if relayer delegate is already approved (so we don't prompt every login)
   useEffect(() => {
     const check = async () => {
-      if (!wallet.publicKey || !connection || !checkRelayerDelegateApproved) return;
+      if (!wallet.publicKey || !checkRelayerDelegateApproved) return;
       delegateCheckCompleteRef.current = false;
       try {
         const approved = await checkRelayerDelegateApproved({
-          connection,
           walletPublicKey: wallet.publicKey.toBase58(),
         });
         delegateCheckCompleteRef.current = true;
@@ -150,7 +159,10 @@ function Dashboard() {
       }
     };
     check();
-  }, [wallet.publicKey, connection, checkRelayerDelegateApproved]);
+    // checkRelayerDelegateApproved is a plain (non-memoized) function from CipherPayContext that
+    // gets a new reference on every provider render; including it here would re-run this on-chain
+    // check (and its RPC calls) on nearly every render instead of only when the wallet changes.
+  }, [wallet.publicKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fallback: if user has shielded notes, assume approved ONLY while we're still waiting for the on-chain check.
   // Once the check completes, trust its result - do NOT override a false (e.g. after relayer key rotation).
@@ -161,49 +173,43 @@ function Dashboard() {
     }
   }, [spendableNotes?.length, allNotes?.length, isDelegateApproved]);
 
-  // Fetch wallet balance and ATA balance
+  // Fetch wallet balance and ATA balance via the backend, not a direct browser connection
+  // to the validator — browsers in this environment cannot reliably hold a direct connection
+  // to the local validator (requests stall indefinitely in the browser's own socket pool),
+  // while the backend reaches it instantly. See packages/server/src/routes/wallet.balance.get.ts.
+  const fetchBalancesInFlightRef = useRef(false);
   useEffect(() => {
     const fetchBalances = async () => {
-      if (!wallet.publicKey || !connection) {
+      if (!wallet.publicKey) {
         setWalletBalance(0);
         setAtaBalance(0);
+        setWalletBalanceError(null);
         return;
       }
+      if (fetchBalancesInFlightRef.current) return;
+      fetchBalancesInFlightRef.current = true;
 
       try {
-        // Fetch wallet SOL balance
-        const balance = await connection.getBalance(wallet.publicKey);
-        setWalletBalance(balance);
-
-        // Fetch wSOL ATA balance
-        try {
-          const wsolMint = NATIVE_MINT;
-          const ata = getAssociatedTokenAddressSync(wsolMint, wallet.publicKey, false);
-          const ataInfo = await connection.getAccountInfo(ata);
-          
-          if (ataInfo) {
-            const tokenAccount = await connection.getTokenAccountBalance(ata);
-            setAtaBalance(Number(tokenAccount.value.amount));
-          } else {
-            setAtaBalance(0);
-          }
-        } catch (err) {
-          console.error('Error fetching ATA balance:', err);
-          setAtaBalance(0);
-        }
+        const res = await fetch(`/api/wallet/balance?pubkey=${wallet.publicKey.toBase58()}`);
+        const json = await res.json();
+        if (!json.ok) throw new Error(json.error || 'Failed to fetch balance');
+        setWalletBalance(json.walletBalance);
+        setAtaBalance(json.ataBalance);
+        setWalletBalanceError(null);
       } catch (err) {
-        console.error('Error fetching wallet balance:', err);
-        setWalletBalance(0);
+        console.error('[Dashboard] Failed to fetch wallet balance:', err);
+        setWalletBalanceError(err?.message || 'Failed to fetch balance');
+      } finally {
+        fetchBalancesInFlightRef.current = false;
       }
     };
 
     fetchBalances();
-    
+
     // Refresh balances periodically (every 5 seconds)
     const interval = setInterval(fetchBalances, 5000);
-    
     return () => clearInterval(interval);
-  }, [wallet.publicKey, connection, isConnected]);
+  }, [wallet.publicKey]);
 
   const handleDisconnect = async () => {
     try {
@@ -385,26 +391,20 @@ function Dashboard() {
     switch (event) {
       case 'DepositCompleted':
         return (
-          <div className="bg-green-100 rounded-full p-2">
-            <svg className="w-6 h-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
+          <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-green-500/15 text-green-400">
+            <ArrowDownToLine className="h-5 w-5" />
           </div>
         );
       case 'TransferCompleted':
         return (
-          <div className="bg-blue-100 rounded-full p-2">
-            <svg className="w-6 h-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-            </svg>
+          <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-blue-500/15 text-blue-400">
+            <ArrowLeftRight className="h-5 w-5" />
           </div>
         );
       case 'WithdrawCompleted':
         return (
-          <div className="bg-orange-100 rounded-full p-2">
-            <svg className="w-6 h-6 text-orange-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
-            </svg>
+          <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-orange-500/15 text-orange-400">
+            <ArrowUpFromLine className="h-5 w-5" />
           </div>
         );
       default:
@@ -542,7 +542,6 @@ function Dashboard() {
       const amountInLamports = BigInt(Math.floor(parseFloat(approveAmount) * 1e9));
       
       const approvalParams = {
-        connection,
         wallet,
         tokenMint: 'So11111111111111111111111111111111111111112', // Native SOL (Wrapped SOL)
         amount: amountInLamports,
@@ -819,9 +818,9 @@ function Dashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="flex min-h-screen items-center justify-center bg-[#05070f]">
         <div className="text-center">
-          <h2 className="text-2xl font-bold text-gray-900">Loading Dashboard...</h2>
+          <h2 className="text-2xl font-bold text-white">Loading Dashboard...</h2>
         </div>
       </div>
     );
@@ -831,1063 +830,1111 @@ function Dashboard() {
   // This prevents flash of content before redirect
   if (!isInitialized || !isConnected || !isAuthenticated) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="flex min-h-screen items-center justify-center bg-[#05070f]">
         <div className="text-center">
-          <div className="mb-4">
-            <svg className="animate-spin h-8 w-8 text-indigo-600 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-          </div>
-          <p className="text-lg text-gray-600">Redirecting to login...</p>
+          <Loader2 className="mx-auto mb-4 h-8 w-8 animate-spin text-blue-500" />
+          <p className="text-lg text-gray-400">Redirecting to login...</p>
         </div>
       </div>
     );
   }
 
+  const sidebarSections = [
+    {
+      items: [
+        { icon: LayoutDashboard, label: 'Overview', onClick: () => scrollToRef(overviewRef), active: true },
+      ],
+    },
+    {
+      title: 'Transactions',
+      items: [
+        { icon: ArrowDownToLine, label: 'Deposit', onClick: () => setShowDepositModal(true) },
+        { icon: ArrowLeftRight, label: 'Transfer', onClick: () => setShowTransferModal(true) },
+        { icon: ArrowUpFromLine, label: 'Withdraw', onClick: handleWithdrawClick },
+        { icon: FileStack, label: 'Notes', onClick: () => handleShowNotes('all') },
+      ],
+    },
+    {
+      title: 'Integration',
+      items: [
+        { icon: Radio, label: 'Relayer Status', onClick: () => scrollToRef(solanaStatusRef) },
+        { icon: Cpu, label: 'SDK Components', onClick: () => scrollToRef(sdkStatusRef) },
+        { icon: KeyRound, label: 'API Keys', placeholder: true },
+      ],
+    },
+    {
+      title: 'Audit & Security',
+      items: [
+        { icon: ClipboardList, label: 'Audit Logs', href: auditPortalHref, external: true },
+        { icon: Bell, label: 'Alerts', placeholder: true },
+        { icon: Lock, label: 'Security', placeholder: true },
+      ],
+    },
+    {
+      title: 'Settings',
+      items: [
+        { icon: SettingsIcon, label: 'Settings', placeholder: true },
+        { icon: LifeBuoy, label: 'Support', placeholder: true },
+      ],
+    },
+  ];
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-6">
-            <div className="flex items-center">
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">CipherPay Solana Dashboard</h1>
-                {authUser?.username && (
-                  <p className="text-sm text-gray-600 mt-1">Welcome, @{authUser.username}</p>
-                )}
-              </div>
+    <div className="min-h-screen bg-[#05070f] text-white">
+      <div className="flex">
+        {/* Sidebar */}
+        <aside className="flex w-64 flex-shrink-0 flex-col justify-between border-r border-white/10 p-4">
+          <div>
+            <div className="mb-6 flex items-center gap-2 px-2 py-2">
+              <img src="/images/Header-Footer-logo.png" alt="CipherPay" className="h-7 w-auto" />
             </div>
-            <div className="flex items-center space-x-4">
+            <nav className="space-y-6">
+              {sidebarSections.map((section, sectionIndex) => (
+                <div key={sectionIndex}>
+                  {section.title && (
+                    <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-gray-500">
+                      {section.title}
+                    </p>
+                  )}
+                  <div className="space-y-1">
+                    {section.items.map((item) => {
+                      const Icon = item.icon;
+                      const className = `flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                        item.active ? 'bg-white/10 text-white' : 'text-gray-400 hover:bg-white/5 hover:text-white'
+                      }`;
+                      if (item.href) {
+                        return (
+                          <a
+                            key={item.label}
+                            href={item.href}
+                            target={item.external ? '_blank' : undefined}
+                            rel={item.external ? 'noopener noreferrer' : undefined}
+                            className={className}
+                          >
+                            <Icon className="h-4 w-4" />
+                            {item.label}
+                          </a>
+                        );
+                      }
+                      return (
+                        <button
+                          key={item.label}
+                          type="button"
+                          onClick={item.onClick}
+                          title={item.placeholder ? 'Coming soon' : undefined}
+                          className={className}
+                        >
+                          <Icon className="h-4 w-4" />
+                          {item.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </nav>
+          </div>
+
+          <div className="rounded-xl border border-white/10 bg-gradient-to-b from-blue-500/10 to-purple-500/10 p-4 text-center">
+            <img src="/images/dashboard-shield.png" alt="" className="mx-auto mb-3 h-16 w-16" />
+            <p className="text-sm font-semibold text-white">Privacy by design. Trust by proof.</p>
+            <p className="mt-1 text-xs text-gray-400">Zero-knowledge privacy for Solana payments.</p>
+            <a
+              href="#"
+              className="mt-3 flex items-center justify-center gap-1 rounded-lg bg-gradient-to-r from-blue-500 to-purple-600 py-2 text-xs font-semibold text-white hover:opacity-90"
+            >
+              Learn More <ArrowRight className="h-3 w-3" />
+            </a>
+          </div>
+        </aside>
+
+        {/* Main column */}
+        <div className="min-w-0 flex-1">
+          {/* Top bar */}
+          <header className="flex items-center justify-between border-b border-white/10 px-8 py-5">
+            <div>
+              <h1 className="text-2xl font-bold text-white">Dashboard</h1>
+              {authUser?.username && (
+                <button
+                  onClick={() => handleCopy(authUser.username, 'username')}
+                  className="group mt-1 flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-200"
+                  title="Click to copy username"
+                >
+                  <span>Welcome back, @{authUser.username}</span>
+                  {copiedItem === 'username' ? (
+                    <Check className="h-3 w-3 text-green-400" />
+                  ) : (
+                    <Copy className="h-3 w-3 opacity-0 transition-opacity group-hover:opacity-50" />
+                  )}
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-3">
               <a
                 href={auditPortalHref}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-sm font-medium text-indigo-600 hover:text-indigo-800"
+                className="flex items-center gap-2 rounded-lg border border-white/15 px-4 py-2 text-sm text-gray-200 transition-colors hover:border-white/30"
               >
-                Audit portal
+                <ExternalLink className="h-4 w-4" />
+                Audit Portal
               </a>
-              <div className="text-right space-y-1">
-                {authUser?.username && (
-                  <button
-                    onClick={() => handleCopy(authUser.username, 'username')}
-                    className="flex items-center space-x-2 text-sm font-medium text-gray-900 hover:text-indigo-600 transition-colors group"
-                    title="Click to copy username"
-                  >
-                    <span>@{authUser.username}</span>
-                    {copiedItem === 'username' ? (
-                      <svg className="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                    ) : (
-                      <svg className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                      </svg>
-                    )}
-                  </button>
+              <button
+                onClick={() => handleCopy(publicAddress, 'address')}
+                className="flex items-center gap-2 rounded-lg border border-white/15 px-4 py-2 font-mono text-sm text-gray-200 transition-colors hover:border-white/30"
+                title="Click to copy full address"
+              >
+                {formatAddress(publicAddress)}
+                {copiedItem === 'address' ? (
+                  <Check className="h-4 w-4 text-green-400" />
+                ) : (
+                  <Copy className="h-4 w-4 opacity-50" />
                 )}
-                <button
-                  onClick={() => handleCopy(publicAddress, 'address')}
-                  className="flex items-center space-x-2 text-xs text-gray-500 hover:text-indigo-600 transition-colors group"
-                  title="Click to copy full address"
-                >
-                  <span className="font-mono">{formatAddress(publicAddress)}</span>
-                  {copiedItem === 'address' ? (
-                    <svg className="w-3 h-3 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                  ) : (
-                    <svg className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                    </svg>
-                  )}
-                </button>
-              </div>
+              </button>
+              <button
+                onClick={() => fetchRecentActivities(currentPage)}
+                title="Refresh"
+                className="rounded-lg border border-white/15 p-2.5 text-gray-200 transition-colors hover:border-white/30"
+              >
+                <RefreshCw className="h-4 w-4" />
+              </button>
               <button
                 onClick={handleDisconnect}
-                className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md text-sm font-medium"
+                className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-blue-500 to-purple-600 px-4 py-2 text-sm font-medium text-white hover:opacity-90"
               >
+                <LogOut className="h-4 w-4" />
                 Disconnect
               </button>
             </div>
-          </div>
-        </div>
-      </div>
+          </header>
 
-      {/* Main Content */}
-      <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        {error && (
-          <div className="mb-6 bg-red-50 border border-red-200 rounded-md p-4">
-            <div className="flex">
-              <div className="ml-3">
-                <h3 className="text-sm font-medium text-red-800">Error</h3>
-                <div className="mt-2 text-sm text-red-700">
-                  <p>{error}</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Account Overview */}
-        <div className="bg-white overflow-hidden shadow rounded-lg mb-6">
-          <div className="px-4 py-5 sm:p-6">
-            <h2 className="text-lg font-medium text-gray-900 mb-4">Account Overview</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <dt className="text-sm font-medium text-gray-500">Wallet Balance</dt>
-                <dd className="mt-1 text-3xl font-semibold text-gray-900">
-                  {formatBalance(walletBalance)} SOL
-                </dd>
-              </div>
-              <div className="bg-gray-50 p-4 rounded-lg flex flex-col">
-                <div className="flex items-center justify-between">
-                  <dt className="text-sm font-medium text-gray-500">User ATA Balance</dt>
-                  {ataBalance > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setShowDestroyAtaModal(true)}
-                      className="text-xs px-2 py-1 bg-amber-100 text-amber-800 rounded hover:bg-amber-200 transition-colors"
-                    >
-                      Destroy ATA
-                    </button>
-                  )}
-                </div>
-                <dd className="mt-1 text-3xl font-semibold text-gray-900">
-                  {formatBalance(ataBalance)} SOL
-                </dd>
-              </div>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <dt className="text-sm font-medium text-gray-500">Shielded Balance</dt>
-                <dd className="mt-1 text-3xl font-semibold text-gray-900">
-                  {formatBalance(balance)} SOL
-                </dd>
-              </div>
-              <div 
-                className="bg-gray-50 p-4 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors"
-                onClick={() => handleShowNotes('spendable')}
-                title="Click to view spendable notes details"
-              >
-                <dt className="text-sm font-medium text-gray-500 flex items-center">
-                  Spendable Notes
-                  <svg className="w-4 h-4 ml-2 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </dt>
-                <dd className="mt-1 text-3xl font-semibold text-gray-900">
-                  {spendableNotes.length}
-                </dd>
-              </div>
-              <div 
-                className="bg-gray-50 p-4 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors"
-                onClick={() => handleShowNotes('all')}
-                title="Click to view all notes details"
-              >
-                <dt className="text-sm font-medium text-gray-500 flex items-center">
-                  Total Notes
-                  <svg className="w-4 h-4 ml-2 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </dt>
-                <dd className="mt-1 text-3xl font-semibold text-gray-900">
-                  {allNotes.length}
-                </dd>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Actions */}
-        <div className="bg-white overflow-hidden shadow rounded-lg mb-6">
-          <div className="px-4 py-5 sm:p-6">
-            <h2 className="text-lg font-medium text-gray-900 mb-4">Actions</h2>
-            
-            {/* Show approve delegate button if not approved */}
-            {!isDelegateApproved && (
-              <div className="mb-4 p-4 bg-yellow-50 border-l-4 border-yellow-400 rounded">
-                <div className="flex">
-                  <div className="flex-shrink-0">
-                    <svg className="h-5 w-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                    </svg>
-                  </div>
-                  <div className="ml-3">
-                    <p className="text-sm text-yellow-700">
-                      Before making your first deposit, you need to approve the relayer as a delegate for your tokens.
-                      <button
-                        onClick={() => setShowApproveModal(true)}
-                        className="ml-2 font-medium underline text-yellow-700 hover:text-yellow-600"
-                      >
-                        Approve Now
-                      </button>
-                    </p>
-                  </div>
-                </div>
+          {/* Main Content */}
+          <div className="px-8 py-6">
+            {error && (
+              <div className="mb-6 rounded-xl border border-red-500/30 bg-red-500/10 p-4">
+                <h3 className="text-sm font-medium text-red-300">Error</h3>
+                <p className="mt-2 text-sm text-red-400">{error}</p>
               </div>
             )}
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* Deposit */}
-              <button
-                onClick={() => setShowDepositModal(true)}
-                disabled={actionLoading}
-                className="relative group bg-white p-6 focus-within:ring-2 focus-within:ring-inset focus-within:ring-indigo-500 border border-gray-200 rounded-lg hover:border-indigo-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <div>
-                  <span className="rounded-lg inline-flex p-3 bg-green-50 text-green-700 ring-4 ring-white">
-                    <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                    </svg>
-                  </span>
-                </div>
-                <div className="mt-8">
-                  <h3 className="text-lg font-medium text-left">Deposit</h3>
-                  <p className="mt-2 text-sm text-gray-500 text-left">
-                    Deposit funds into your shielded account
-                  </p>
-                </div>
-              </button>
 
-              {/* Transfer */}
-              <button
-                onClick={() => setShowTransferModal(true)}
-                disabled={actionLoading}
-                className="relative group bg-white p-6 focus-within:ring-2 focus-within:ring-inset focus-within:ring-indigo-500 border border-gray-200 rounded-lg hover:border-indigo-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <div>
-                  <span className="rounded-lg inline-flex p-3 bg-blue-50 text-blue-700 ring-4 ring-white">
-                    <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-                    </svg>
-                  </span>
-                </div>
-                <div className="mt-8">
-                  <h3 className="text-lg font-medium text-left">Transfer</h3>
-                  <p className="mt-2 text-sm text-gray-500 text-left">
-                    Transfer funds to another shielded account
-                  </p>
-                </div>
-              </button>
-
-              {/* Withdraw */}
-              <button
-                onClick={handleWithdrawClick}
-                disabled={actionLoading}
-                className="relative group bg-white p-6 focus-within:ring-2 focus-within:ring-inset focus-within:ring-indigo-500 border border-gray-200 rounded-lg hover:border-indigo-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <div>
-                  <span className="rounded-lg inline-flex p-3 bg-red-50 text-red-700 ring-4 ring-white">
-                    <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
-                    </svg>
-                  </span>
-                </div>
-                <div className="mt-8">
-                  <h3 className="text-lg font-medium text-left">Withdraw</h3>
-                  <p className="mt-2 text-sm text-gray-500 text-left">
-                    Withdraw funds from your shielded account
-                  </p>
-                </div>
-              </button>
-            </div>
-          </div>
-        </div>
-
-
-        {/* Solana Integration Status */}
-        <div className="mb-6">
-          <SolanaStatus />
-        </div>
-
-        {/* SDK Status */}
-        <div className="mb-6">
-          <SDKStatus />
-        </div>
-
-        {/* All Activities */}
-        <div className="bg-white overflow-hidden shadow rounded-lg">
-          <div className="px-4 py-5 sm:p-6">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-medium text-gray-900">All Activities</h2>
-              <div className="flex items-center space-x-3">
-                <label htmlFor="activitiesPerPage" className="text-sm text-gray-600">
-                  Per page:
-                </label>
-                <select
-                  id="activitiesPerPage"
-                  value={activitiesPerPage}
-                  onChange={(e) => {
-                    const newLimit = parseInt(e.target.value);
-                    setActivitiesPerPage(newLimit);
-                    setCurrentPage(1); // Reset to first page when limit changes
-                    fetchRecentActivities(1, newLimit);
-                  }}
-                  className="text-sm border border-gray-300 rounded-md px-2 py-1 text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                >
-                  <option value={10}>10</option>
-                  <option value={20}>20</option>
-                  <option value={50}>50</option>
-                  <option value={100}>100</option>
-                </select>
-                <button
-                  onClick={() => fetchRecentActivities(currentPage)}
-                  className="text-sm text-indigo-600 hover:text-indigo-800 flex items-center"
-                  title="Refresh activities"
-                >
-                  <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                  Refresh
-                </button>
-              </div>
-            </div>
-            
-            {/* Search Filters */}
-            <div className="mb-4 border-b border-gray-200 pb-4">
-              <div className="flex items-center justify-between mb-2">
-                <button
-                  onClick={() => setShowSearchFilters(!showSearchFilters)}
-                  className="text-sm text-indigo-600 hover:text-indigo-800 flex items-center"
-                >
-                  <svg className={`w-4 h-4 mr-1 transition-transform ${showSearchFilters ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                  {showSearchFilters ? 'Hide' : 'Show'} Search Filters
-                </button>
-                {(searchUsername || searchKind || searchDateFrom || searchDateTo || searchAmountMin || searchAmountMax || searchSignature) && (
-                  <button
-                    onClick={() => {
-                      setSearchUsername('');
-                      setSearchKind('');
-                      setSearchDateFrom('');
-                      setSearchDateTo('');
-                      setSearchAmountMin('');
-                      setSearchAmountMax('');
-                      setSearchSignature('');
-                      setCurrentPage(1);
-                      fetchRecentActivities(1, activitiesPerPage);
-                    }}
-                    className="text-sm text-red-600 hover:text-red-800"
-                  >
-                    Clear All
-                  </button>
-                )}
-              </div>
-              
-              {showSearchFilters && (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
-                  {/* Username Search */}
-                  <div>
-                    <label htmlFor="searchUsername" className="block text-sm font-medium text-gray-700 mb-1">
-                      Username
-                    </label>
-                    <input
-                      type="text"
-                      id="searchUsername"
-                      value={searchUsername}
-                      onChange={(e) => setSearchUsername(e.target.value)}
-                      placeholder="@username"
-                      className="w-full text-sm border border-gray-300 rounded-md px-3 py-2 text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                    />
+            {/* Account Overview */}
+            <div ref={overviewRef} className="mb-6 scroll-mt-6">
+              <h2 className="mb-4 text-lg font-semibold text-white">Account Overview</h2>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+                <div className="rounded-xl border border-white/10 bg-[#0d1220] p-5">
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-1.5 text-sm text-gray-400">
+                      Wallet Balance
+                      {walletBalanceError && (
+                        <AlertTriangle
+                          className="h-3.5 w-3.5 text-yellow-400"
+                          title={`Couldn't refresh balance: ${walletBalanceError}`}
+                        />
+                      )}
+                    </span>
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-500/15 text-blue-400">
+                      <WalletIcon className="h-4 w-4" />
+                    </div>
                   </div>
-                  
-                  {/* Transaction Type */}
-                  <div>
-                    <label htmlFor="searchKind" className="block text-sm font-medium text-gray-700 mb-1">
-                      Type
+                  <p className="mt-3 text-2xl font-semibold text-white">{formatBalance(walletBalance)} SOL</p>
+                  {walletBalanceError && (
+                    <p className="mt-1 text-xs text-yellow-500">Showing last known value — refresh failed</p>
+                  )}
+                </div>
+
+                <div className="rounded-xl border border-white/10 bg-[#0d1220] p-5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-400">User ATA Balance</span>
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-500/15 text-purple-400">
+                      <User className="h-4 w-4" />
+                    </div>
+                  </div>
+                  <div className="mt-3 flex items-end justify-between">
+                    <p className="text-2xl font-semibold text-white">{formatBalance(ataBalance)} SOL</p>
+                    {ataBalance > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowDestroyAtaModal(true)}
+                        className="rounded-md bg-amber-500/15 px-2 py-1 text-xs text-amber-400 transition-colors hover:bg-amber-500/25"
+                      >
+                        Destroy ATA
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-white/10 bg-[#0d1220] p-5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-400">Shielded Balance</span>
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-green-500/15 text-green-400">
+                      <ShieldCheck className="h-4 w-4" />
+                    </div>
+                  </div>
+                  <p className="mt-3 text-2xl font-semibold text-white">{formatBalance(balance)} SOL</p>
+                </div>
+
+                <div
+                  className="cursor-pointer rounded-xl border border-white/10 bg-[#0d1220] p-5 transition-colors hover:border-white/20"
+                  onClick={() => handleShowNotes('spendable')}
+                  title="Click to view spendable notes details"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-1.5 text-sm text-gray-400">
+                      Spendable Notes
+                      <Info className="h-3.5 w-3.5 text-gray-500" />
+                    </span>
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/15 text-amber-400">
+                      <FileStack className="h-4 w-4" />
+                    </div>
+                  </div>
+                  <p className="mt-3 text-2xl font-semibold text-white">{spendableNotes.length}</p>
+                </div>
+
+                <div
+                  className="cursor-pointer rounded-xl border border-white/10 bg-[#0d1220] p-5 transition-colors hover:border-white/20"
+                  onClick={() => handleShowNotes('all')}
+                  title="Click to view all notes details"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-1.5 text-sm text-gray-400">
+                      Total Notes
+                      <Info className="h-3.5 w-3.5 text-gray-500" />
+                    </span>
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-pink-500/15 text-pink-400">
+                      <FileStack className="h-4 w-4" />
+                    </div>
+                  </div>
+                  <p className="mt-3 text-2xl font-semibold text-white">{allNotes.length}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Actions */}
+            <div className="mb-6">
+              <h2 className="mb-4 text-lg font-semibold text-white">Quick Actions</h2>
+
+              {!isDelegateApproved && (
+                <div className="mb-4 flex items-start gap-3 rounded-xl border border-yellow-500/30 bg-yellow-500/10 p-4">
+                  <AlertTriangle className="h-5 w-5 flex-shrink-0 text-yellow-400" />
+                  <p className="text-sm text-yellow-200">
+                    Before making your first deposit, you need to approve the relayer as a delegate for your tokens.
+                    <button
+                      onClick={() => setShowApproveModal(true)}
+                      className="ml-2 font-medium text-yellow-300 underline hover:text-yellow-200"
+                    >
+                      Approve Now
+                    </button>
+                  </p>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                <button
+                  onClick={() => setShowDepositModal(true)}
+                  disabled={actionLoading}
+                  className="group relative rounded-xl border border-white/10 bg-gradient-to-br from-green-500/10 to-transparent p-6 text-left transition-colors hover:border-green-500/30 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-green-500/15 text-green-400">
+                      <ArrowDownToLine className="h-5 w-5" />
+                    </div>
+                    <ArrowRight className="h-5 w-5 text-gray-500 transition-transform group-hover:translate-x-1 group-hover:text-green-400" />
+                  </div>
+                  <h3 className="mt-4 font-semibold text-white">Deposit</h3>
+                  <p className="mt-1 text-sm text-gray-400">Deposit funds into your shielded account</p>
+                </button>
+
+                <button
+                  onClick={() => setShowTransferModal(true)}
+                  disabled={actionLoading}
+                  className="group relative rounded-xl border border-white/10 bg-gradient-to-br from-blue-500/10 to-transparent p-6 text-left transition-colors hover:border-blue-500/30 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-500/15 text-blue-400">
+                      <ArrowLeftRight className="h-5 w-5" />
+                    </div>
+                    <ArrowRight className="h-5 w-5 text-gray-500 transition-transform group-hover:translate-x-1 group-hover:text-blue-400" />
+                  </div>
+                  <h3 className="mt-4 font-semibold text-white">Transfer</h3>
+                  <p className="mt-1 text-sm text-gray-400">Transfer funds to another shielded account</p>
+                </button>
+
+                <button
+                  onClick={handleWithdrawClick}
+                  disabled={actionLoading}
+                  className="group relative rounded-xl border border-white/10 bg-gradient-to-br from-purple-500/10 to-transparent p-6 text-left transition-colors hover:border-purple-500/30 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-purple-500/15 text-purple-400">
+                      <ArrowUpFromLine className="h-5 w-5" />
+                    </div>
+                    <ArrowRight className="h-5 w-5 text-gray-500 transition-transform group-hover:translate-x-1 group-hover:text-purple-400" />
+                  </div>
+                  <h3 className="mt-4 font-semibold text-white">Withdraw</h3>
+                  <p className="mt-1 text-sm text-gray-400">Withdraw funds from your shielded account</p>
+                </button>
+              </div>
+            </div>
+
+            {/* Activities + Status */}
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+              {/* Recent Activities */}
+              <div className="rounded-xl border border-white/10 bg-[#0d1220] p-6 lg:col-span-2">
+                <div className="mb-4 flex items-center justify-between">
+                  <h2 className="text-lg font-semibold text-white">Recent Activities</h2>
+                  <div className="flex items-center gap-3">
+                    <label htmlFor="activitiesPerPage" className="text-sm text-gray-400">
+                      Per page:
                     </label>
                     <select
-                      id="searchKind"
-                      value={searchKind}
-                      onChange={(e) => setSearchKind(e.target.value)}
-                      className="w-full text-sm border border-gray-300 rounded-md px-3 py-2 text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                    >
-                      <option value="">All Types</option>
-                      <option value="deposit">Deposit</option>
-                      <option value="transfer">Transfer</option>
-                      <option value="withdraw">Withdraw</option>
-                    </select>
-                  </div>
-                  
-                  {/* Date From */}
-                  <div>
-                    <label htmlFor="searchDateFrom" className="block text-sm font-medium text-gray-700 mb-1">
-                      Date From
-                    </label>
-                    <input
-                      type="date"
-                      id="searchDateFrom"
-                      value={searchDateFrom}
-                      onChange={(e) => setSearchDateFrom(e.target.value)}
-                      className="w-full text-sm border border-gray-300 rounded-md px-3 py-2 text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                    />
-                  </div>
-                  
-                  {/* Date To */}
-                  <div>
-                    <label htmlFor="searchDateTo" className="block text-sm font-medium text-gray-700 mb-1">
-                      Date To
-                    </label>
-                    <input
-                      type="date"
-                      id="searchDateTo"
-                      value={searchDateTo}
-                      onChange={(e) => setSearchDateTo(e.target.value)}
-                      className="w-full text-sm border border-gray-300 rounded-md px-3 py-2 text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                    />
-                  </div>
-                  
-                  {/* Amount Min */}
-                  <div>
-                    <label htmlFor="searchAmountMin" className="block text-sm font-medium text-gray-700 mb-1">
-                      Min Amount (SOL)
-                    </label>
-                    <input
-                      type="number"
-                      id="searchAmountMin"
-                      value={searchAmountMin}
-                      onChange={(e) => setSearchAmountMin(e.target.value)}
-                      placeholder="0.0"
-                      step="0.0001"
-                      min="0"
-                      className="w-full text-sm border border-gray-300 rounded-md px-3 py-2 text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                    />
-                  </div>
-                  
-                  {/* Amount Max */}
-                  <div>
-                    <label htmlFor="searchAmountMax" className="block text-sm font-medium text-gray-700 mb-1">
-                      Max Amount (SOL)
-                    </label>
-                    <input
-                      type="number"
-                      id="searchAmountMax"
-                      value={searchAmountMax}
-                      onChange={(e) => setSearchAmountMax(e.target.value)}
-                      placeholder="0.0"
-                      step="0.0001"
-                      min="0"
-                      className="w-full text-sm border border-gray-300 rounded-md px-3 py-2 text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                    />
-                  </div>
-                  
-                  {/* Signature */}
-                  <div>
-                    <label htmlFor="searchSignature" className="block text-sm font-medium text-gray-700 mb-1">
-                      Transaction Signature
-                    </label>
-                    <input
-                      type="text"
-                      id="searchSignature"
-                      value={searchSignature}
-                      onChange={(e) => setSearchSignature(e.target.value)}
-                      placeholder="Enter signature"
-                      className="w-full text-sm border border-gray-300 rounded-md px-3 py-2 text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                    />
-                  </div>
-                </div>
-              )}
-              
-              {showSearchFilters && (
-                <div className="mt-4 flex justify-end">
-                  <button
-                    onClick={() => {
-                      setCurrentPage(1);
-                      fetchRecentActivities(1, activitiesPerPage);
-                    }}
-                    className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                  >
-                    Apply Filters
-                  </button>
-                </div>
-              )}
-            </div>
-            
-            {recentActivities.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
-                <svg className="w-16 h-16 mx-auto mb-4 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                </svg>
-                <p className="text-sm">No recent activity</p>
-                <p className="text-xs text-gray-400 mt-1">Your transactions will appear here</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {recentActivities.map((activity, index) => (
-                  <div key={activity.id || index} className="flex items-center justify-between p-4 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors">
-                    <div className="flex items-center space-x-4">
-                      {getActivityIcon(activity.event)}
-                      <div>
-                        <div className="flex items-center space-x-2">
-                          <p className="text-sm font-medium text-gray-900">
-                            {getActivityType(activity)}
-                          </p>
-                          {getActivityDirection(activity) && (
-                            <span className="text-xs text-gray-500">
-                              {getActivityDirection(activity)}
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-xs text-gray-500 mt-1">
-                          {formatTimestamp(activity.timestamp)}
-                        </p>
-                        {formatRecipient(activity) && (
-                          <p className="text-xs text-gray-400 mt-0.5 font-mono">
-                            {formatRecipient(activity)}
-                          </p>
-                        )}
-                        {activity.signature && (
-                          <a
-                            href={`https://explorer.solana.com/tx/${activity.signature}?cluster=custom&customUrl=http://127.0.0.1:8899`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-xs text-indigo-600 hover:text-indigo-800 font-mono"
-                          >
-                            {activity.signature.slice(0, 8)}...
-                          </a>
-                        )}
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className={`text-sm font-semibold ${
-                        (getActivityDirection(activity) === 'Received' || getActivityType(activity) === 'Change') 
-                          ? 'text-green-600' 
-                          : getActivityDirection(activity) === 'Sent'
-                          ? 'text-red-600'
-                          : 'text-gray-900'
-                      }`}>
-                        {getActivityDirection(activity) === 'Sent' ? '-' : 
-                         (getActivityDirection(activity) === 'Received' || getActivityType(activity) === 'Change') ? '+' : ''}
-                        {activity.amount !== null && activity.amount !== undefined 
-                          ? activity.amount.toFixed(4)
-                          : (getActivityDirection(activity) === 'Sent' ? 'Sent' : '?')}
-                        {(activity.amount !== null && activity.amount !== undefined) && (
-                          <span className="text-gray-400 text-xs ml-1">SOL</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-            
-            {/* Pagination Controls */}
-            {totalActivities > activitiesPerPage && (
-              <>
-                <div className="mt-6 flex items-center justify-between border-t border-gray-200 pt-4">
-                  <div className="flex items-center space-x-2">
-                    {Array.from({ length: Math.ceil(totalActivities / activitiesPerPage) }, (_, i) => i + 1)
-                      .filter(page => {
-                        // Show first page, last page, current page, and pages around current
-                        const totalPages = Math.ceil(totalActivities / activitiesPerPage);
-                        if (totalPages <= 7) return true; // Show all if 7 or fewer pages
-                        if (page === 1 || page === totalPages) return true; // Always show first and last
-                        if (Math.abs(page - currentPage) <= 1) return true; // Show current ± 1
-                        return false;
-                      })
-                      .map((page, index, array) => {
-                        // Add ellipsis between non-consecutive pages
-                        const prevPage = array[index - 1];
-                        const showEllipsisBefore = prevPage && page - prevPage > 1;
-                        
-                        return (
-                          <div key={page} className="flex items-center">
-                            {showEllipsisBefore && (
-                              <span className="px-2 text-gray-500">...</span>
-                            )}
-                            <button
-                              onClick={() => fetchRecentActivities(page)}
-                              className={`px-3 py-1.5 text-sm font-medium rounded-md ${
-                                currentPage === page
-                                  ? 'bg-indigo-600 text-white'
-                                  : 'text-gray-700 bg-white border border-gray-300 hover:bg-gray-50'
-                              }`}
-                            >
-                              {page}
-                            </button>
-                          </div>
-                        );
-                      })}
-                  </div>
-                </div>
-                
-                {/* Simple Navigation Buttons */}
-                <div className="mt-4 flex items-center justify-center space-x-2">
-                  <button
-                    onClick={() => fetchRecentActivities(1)}
-                    disabled={currentPage === 1}
-                    className="px-4 py-2 text-lg font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="First page"
-                  >
-                    &laquo;
-                  </button>
-                  <button
-                    onClick={() => fetchRecentActivities(currentPage - 1)}
-                    disabled={currentPage === 1}
-                    className="px-4 py-2 text-lg font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="Previous page"
-                  >
-                    &lsaquo;
-                  </button>
-                  <button
-                    onClick={() => fetchRecentActivities(currentPage + 1)}
-                    disabled={currentPage >= Math.ceil(totalActivities / activitiesPerPage)}
-                    className="px-4 py-2 text-lg font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="Next page"
-                  >
-                    &rsaquo;
-                  </button>
-                  <button
-                    onClick={() => fetchRecentActivities(Math.ceil(totalActivities / activitiesPerPage))}
-                    disabled={currentPage >= Math.ceil(totalActivities / activitiesPerPage)}
-                    className="px-4 py-2 text-lg font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="Last page"
-                  >
-                    &raquo;
-                  </button>
-                </div>
-              </>
-            )}
-            
-            {/* Page info */}
-            {totalActivities > 0 && (
-              <div className="mt-2 text-xs text-gray-500 text-center">
-                Showing {((currentPage - 1) * activitiesPerPage) + 1} to {Math.min(currentPage * activitiesPerPage, totalActivities)} of {totalActivities} activities
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Approve Delegate Modal */}
-        {showApproveModal && (
-          <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50" onClick={() => setShowApproveModal(false)}>
-            <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white" onClick={(e) => e.stopPropagation()}>
-              <div className="mt-3">
-                <h3 className="text-lg font-medium text-gray-900 mb-4">Approve Relayer Delegate</h3>
-                <p className="text-sm text-gray-600 mb-4">
-                  This is a one-time setup that allows the relayer to process deposits on your behalf. 
-                  You're approving the relayer to spend up to the specified amount of tokens from your wallet.
-                </p>
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Approval Amount (SOL)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    value={approveAmount}
-                    onChange={(e) => setApproveAmount(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                    placeholder="10.0"
-                  />
-                  <p className="mt-1 text-xs text-gray-500">
-                    Recommended: Approve enough for multiple deposits to avoid frequent approvals
-                  </p>
-                </div>
-                <div className="flex justify-end space-x-3">
-                  <button
-                    onClick={() => {
-                      setShowApproveModal(false);
-                      setApproveAmount('10');
-                    }}
-                    className="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleApproveDelegate}
-                    disabled={actionLoading || !approveAmount}
-                    className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {actionLoading ? 'Processing...' : 'Approve Delegate'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Destroy ATA Confirmation Modal */}
-        {showDestroyAtaModal && (
-          <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50" onClick={() => setShowDestroyAtaModal(false)}>
-            <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white" onClick={(e) => e.stopPropagation()}>
-              <div className="mt-3">
-                <h3 className="text-lg font-medium text-gray-900 mb-4">Destroy ATA &amp; Reclaim SOL</h3>
-                <p className="text-sm text-gray-600 mb-4">
-                  This will close your wSOL token account and move <strong>{formatBalance(ataBalance)} SOL</strong> to your wallet as native SOL. You will need to create a new ATA when you deposit again.
-                </p>
-                <p className="text-sm text-amber-600 mb-4">
-                  Are you sure you want to proceed?
-                </p>
-                <div className="flex justify-end space-x-3">
-                  <button
-                    onClick={() => setShowDestroyAtaModal(false)}
-                    className="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={async () => {
-                      try {
-                        setActionLoading(true);
-                        await destroyAta();
-                        setShowDestroyAtaModal(false);
-                        setError(null);
-                        // Refresh balances (ATA is now closed, SOL moved to wallet)
-                        setAtaBalance(0);
-                        const balance = await connection.getBalance(wallet.publicKey);
-                        setWalletBalance(balance);
-                        refreshData();
-                      } catch (err) {
-                        console.error('[Dashboard] destroyAta failed:', err);
-                      } finally {
-                        setActionLoading(false);
-                      }
-                    }}
-                    disabled={actionLoading}
-                    className="px-4 py-2 bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {actionLoading ? 'Processing...' : 'Confirm'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Error Modal - friendly display for action failures */}
-        {showErrorModal && (
-          <div 
-            className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center p-4"
-            onClick={() => { setShowErrorModal(false); setErrorModalContent({ title: '', message: '' }); }}
-          >
-            <div className="relative mx-auto max-w-md w-full bg-white rounded-lg shadow-xl p-6" onClick={(e) => e.stopPropagation()}>
-              <div className="flex items-start">
-                <div className="flex-shrink-0 flex items-center justify-center h-10 w-10 rounded-full bg-red-100">
-                  <svg className="h-5 w-5 text-red-600" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                  </svg>
-                </div>
-                <div className="ml-4 flex-1">
-                  <h3 className="text-lg font-medium text-gray-900">{errorModalContent.title}</h3>
-                  <p className="mt-2 text-sm text-gray-600 whitespace-pre-wrap">{errorModalContent.message}</p>
-                  <div className="mt-6">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowErrorModal(false);
-                        setErrorModalContent({ title: '', message: '' });
+                      id="activitiesPerPage"
+                      value={activitiesPerPage}
+                      onChange={(e) => {
+                        const newLimit = parseInt(e.target.value);
+                        setActivitiesPerPage(newLimit);
+                        setCurrentPage(1); // Reset to first page when limit changes
+                        fetchRecentActivities(1, newLimit);
                       }}
-                      className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                      className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-sm text-gray-200 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
                     >
-                      OK
+                      <option value={10}>10</option>
+                      <option value={20}>20</option>
+                      <option value={50}>50</option>
+                      <option value={100}>100</option>
+                    </select>
+                    <button
+                      onClick={() => fetchRecentActivities(currentPage)}
+                      className="flex items-center text-sm text-blue-400 hover:text-blue-300"
+                      title="Refresh activities"
+                    >
+                      <RefreshCw className="mr-1 h-4 w-4" />
+                      Refresh
                     </button>
                   </div>
                 </div>
-              </div>
-            </div>
-          </div>
-        )}
 
-        {/* Deposit Modal */}
-        {showDepositModal && (
-          <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50" onClick={() => setShowDepositModal(false)}>
-            <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white" onClick={(e) => e.stopPropagation()}>
-              <div className="mt-3">
-                <h3 className="text-lg font-medium text-gray-900 mb-4">Deposit Funds</h3>
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Amount (SOL)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.001"
-                    min="0"
-                    value={depositAmount}
-                    onChange={(e) => setDepositAmount(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                    placeholder="0.0"
-                  />
-                </div>
-                <div className="flex justify-end space-x-3">
-                  <button
-                    onClick={() => {
-                      setShowDepositModal(false);
-                      setDepositAmount('');
-                    }}
-                    className="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleDeposit}
-                    disabled={actionLoading || !depositAmount}
-                    className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {actionLoading ? 'Processing...' : 'Deposit'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Transfer Modal */}
-        {showTransferModal && (
-          <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50" onClick={closeTransferModal}>
-            <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white" onClick={(e) => e.stopPropagation()}>
-              <div className="mt-3">
-                <h3 className="text-lg font-medium text-gray-900 mb-4">Transfer Funds</h3>
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Recipient Username or Address
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      value={transferRecipient}
-                      onChange={handleRecipientChange}
-                      className={`w-full px-3 py-2 pr-10 border ${
-                        recipientLookupStatus === 'not_found' 
-                          ? 'border-red-300 focus:ring-red-500 focus:border-red-500' 
-                          : recipientLookupStatus === 'found'
-                          ? 'border-green-300 focus:ring-green-500 focus:border-green-500'
-                          : 'border-gray-300 focus:ring-indigo-500 focus:border-indigo-500'
-                      } rounded-md shadow-sm focus:outline-none`}
-                      placeholder="@alice or 0x..."
-                    />
-                    <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                      {recipientLookupStatus === 'loading' && (
-                        <svg className="animate-spin h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                      )}
-                      {recipientLookupStatus === 'found' && (
-                        <svg className="h-5 w-5 text-green-500" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                        </svg>
-                      )}
-                      {recipientLookupStatus === 'not_found' && (
-                        <svg className="h-5 w-5 text-red-500" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                        </svg>
-                      )}
-                    </div>
+                {/* Search Filters */}
+                <div className="mb-4 border-b border-white/10 pb-4">
+                  <div className="mb-2 flex items-center justify-between">
+                    <button
+                      onClick={() => setShowSearchFilters(!showSearchFilters)}
+                      className="flex items-center text-sm text-blue-400 hover:text-blue-300"
+                    >
+                      <ChevronDown className={`mr-1 h-4 w-4 transition-transform ${showSearchFilters ? 'rotate-180' : ''}`} />
+                      {showSearchFilters ? 'Hide' : 'Show'} Search Filters
+                    </button>
+                    {(searchUsername || searchKind || searchDateFrom || searchDateTo || searchAmountMin || searchAmountMax || searchSignature) && (
+                      <button
+                        onClick={() => {
+                          setSearchUsername('');
+                          setSearchKind('');
+                          setSearchDateFrom('');
+                          setSearchDateTo('');
+                          setSearchAmountMin('');
+                          setSearchAmountMax('');
+                          setSearchSignature('');
+                          setCurrentPage(1);
+                          fetchRecentActivities(1, activitiesPerPage);
+                        }}
+                        className="text-sm text-red-400 hover:text-red-300"
+                      >
+                        Clear All
+                      </button>
+                    )}
                   </div>
-                  {recipientLookupStatus === 'found' && resolvedRecipientInfo && (
-                    <p className="mt-1 text-sm text-green-600">
-                      ✓ Found @{resolvedRecipientInfo.username}
-                    </p>
-                  )}
-                  {recipientLookupStatus === 'not_found' && (
-                    <p className="mt-1 text-sm text-red-600">
-                      User not found. Please check the username or enter a public key.
-                    </p>
-                  )}
-                  {!recipientLookupStatus && (
-                    <p className="mt-1 text-xs text-gray-500">
-                      Enter @username or full public key (0x...)
-                    </p>
-                  )}
-                </div>
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Amount (SOL)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.001"
-                    min="0"
-                    value={transferAmount}
-                    onChange={(e) => setTransferAmount(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                    placeholder="0.0"
-                  />
-                </div>
-                <div className="flex justify-end space-x-3">
-                  <button
-                    onClick={closeTransferModal}
-                    className="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleTransfer}
-                    disabled={actionLoading || !transferAmount || !transferRecipient}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {actionLoading ? 'Processing...' : 'Transfer'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
 
-        {/* Note Selection Modal for Withdraw */}
-        {showNoteSelectionModal && (
-          <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50" onClick={() => setShowNoteSelectionModal(false)}>
-            <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white" onClick={(e) => e.stopPropagation()}>
-              <div className="mt-3">
-                <h3 className="text-lg font-medium text-gray-900 mb-4">Select Note to Withdraw</h3>
-                <p className="text-sm text-gray-600 mb-4">
-                  Select a note to withdraw. The full amount of the selected note will be withdrawn to your Solana wallet.
-                </p>
-                <div className="mb-4 max-h-96 overflow-y-auto">
-                  {withdrawableNotes.length === 0 ? (
-                    <p className="text-gray-500 text-center py-4">No withdrawable notes available</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {withdrawableNotes.map((note, index) => (
-                        <button
-                          key={index}
-                          onClick={() => handleNoteSelect(note)}
-                          disabled={actionLoading}
-                          className="w-full text-left p-3 border border-gray-300 rounded-md hover:bg-gray-50 hover:border-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  {showSearchFilters && (
+                    <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                      <div>
+                        <label htmlFor="searchUsername" className="mb-1 block text-sm font-medium text-gray-400">
+                          Username
+                        </label>
+                        <input
+                          type="text"
+                          id="searchUsername"
+                          value={searchUsername}
+                          onChange={(e) => setSearchUsername(e.target.value)}
+                          placeholder="@username"
+                          className="w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                        />
+                      </div>
+
+                      <div>
+                        <label htmlFor="searchKind" className="mb-1 block text-sm font-medium text-gray-400">
+                          Type
+                        </label>
+                        <select
+                          id="searchKind"
+                          value={searchKind}
+                          onChange={(e) => setSearchKind(e.target.value)}
+                          className="w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-200 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
                         >
-                          <div className="flex justify-between items-center">
-                            <div>
-                              <p className="text-sm font-medium text-gray-900">
-                                {note.amountFormatted || (Number(note.amount) / 1e9).toFixed(9) + ' SOL'}
-                              </p>
-                              <p className="text-xs text-gray-500 mt-1">
-                                Note #{index + 1}
-                                {note.commitment && (
-                                  <span className="ml-2">({note.commitment.slice(0, 8)}...)</span>
-                                )}
-                              </p>
-                            </div>
-                            <svg className="w-5 h-5 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                            </svg>
-                          </div>
-                        </button>
-                      ))}
+                          <option value="">All Types</option>
+                          <option value="deposit">Deposit</option>
+                          <option value="transfer">Transfer</option>
+                          <option value="withdraw">Withdraw</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label htmlFor="searchDateFrom" className="mb-1 block text-sm font-medium text-gray-400">
+                          Date From
+                        </label>
+                        <input
+                          type="date"
+                          id="searchDateFrom"
+                          value={searchDateFrom}
+                          onChange={(e) => setSearchDateFrom(e.target.value)}
+                          className="w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-200 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                        />
+                      </div>
+
+                      <div>
+                        <label htmlFor="searchDateTo" className="mb-1 block text-sm font-medium text-gray-400">
+                          Date To
+                        </label>
+                        <input
+                          type="date"
+                          id="searchDateTo"
+                          value={searchDateTo}
+                          onChange={(e) => setSearchDateTo(e.target.value)}
+                          className="w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-200 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                        />
+                      </div>
+
+                      <div>
+                        <label htmlFor="searchAmountMin" className="mb-1 block text-sm font-medium text-gray-400">
+                          Min Amount (SOL)
+                        </label>
+                        <input
+                          type="number"
+                          id="searchAmountMin"
+                          value={searchAmountMin}
+                          onChange={(e) => setSearchAmountMin(e.target.value)}
+                          placeholder="0.0"
+                          step="0.0001"
+                          min="0"
+                          className="w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                        />
+                      </div>
+
+                      <div>
+                        <label htmlFor="searchAmountMax" className="mb-1 block text-sm font-medium text-gray-400">
+                          Max Amount (SOL)
+                        </label>
+                        <input
+                          type="number"
+                          id="searchAmountMax"
+                          value={searchAmountMax}
+                          onChange={(e) => setSearchAmountMax(e.target.value)}
+                          placeholder="0.0"
+                          step="0.0001"
+                          min="0"
+                          className="w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                        />
+                      </div>
+
+                      <div>
+                        <label htmlFor="searchSignature" className="mb-1 block text-sm font-medium text-gray-400">
+                          Transaction Signature
+                        </label>
+                        <input
+                          type="text"
+                          id="searchSignature"
+                          value={searchSignature}
+                          onChange={(e) => setSearchSignature(e.target.value)}
+                          placeholder="Enter signature"
+                          className="w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {showSearchFilters && (
+                    <div className="mt-4 flex justify-end">
+                      <button
+                        onClick={() => {
+                          setCurrentPage(1);
+                          fetchRecentActivities(1, activitiesPerPage);
+                        }}
+                        className="rounded-md bg-gradient-to-r from-blue-500 to-purple-600 px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+                      >
+                        Apply Filters
+                      </button>
                     </div>
                   )}
                 </div>
-                <div className="flex justify-end space-x-3">
-                  <button
-                    onClick={() => {
-                      setShowNoteSelectionModal(false);
-                      setWithdrawableNotes([]);
-                    }}
-                    className="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
 
-        {/* Notes Details Modal */}
-        {showNotesModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-lg max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col">
-              <div className="p-6 border-b border-gray-200">
-                <div className="flex justify-between items-center">
-                  <h3 className="text-lg font-semibold text-gray-900">
-                    {selectedNoteType === 'spendable' ? 'Spendable Notes' : 'All Notes'} Details
-                  </h3>
-                  <button
-                    onClick={() => setShowNotesModal(false)}
-                    className="text-gray-400 hover:text-gray-600"
-                  >
-                    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
-                <p className="mt-2 text-sm text-gray-600">
-                  {selectedNoteType === 'spendable' 
-                    ? 'Notes available for transfers and withdrawals' 
-                    : 'All notes including spent ones'}
-                </p>
-              </div>
-              
-              <div className="flex-1 overflow-y-auto p-6">
-                {(selectedNoteType === 'spendable' ? spendableNotes : allNotes).length === 0 ? (
-                  <div className="text-center py-8 text-gray-500">
-                    <svg className="w-16 h-16 mx-auto mb-4 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
-                    </svg>
-                    <p className="text-lg font-medium">No notes found</p>
-                    <p className="text-sm mt-2">Deposit funds to create your first note</p>
+                {recentActivities.length === 0 ? (
+                  <div className="py-8 text-center text-gray-500">
+                    <FileStack className="mx-auto mb-4 h-16 w-16 text-gray-700" />
+                    <p className="text-sm">No recent activity</p>
+                    <p className="mt-1 text-xs text-gray-600">Your transactions will appear here</p>
                   </div>
                 ) : (
-                  <div className="space-y-4">
-                    {(selectedNoteType === 'spendable' ? spendableNotes : allNotes).map((note, index) => (
-                      <div key={index} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                        <div className="flex justify-between items-start mb-3">
-                          <div className="flex items-center space-x-2">
-                            <span className="text-sm font-medium text-gray-700">Note #{index + 1}</span>
-                            {note.spent || note.isSpent ? (
-                              <span className="px-2 py-1 text-xs font-medium bg-red-100 text-red-800 rounded">
-                                Spent
-                              </span>
-                            ) : (
-                              <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded">
-                                Spendable
-                              </span>
+                  <div className="space-y-3">
+                    {recentActivities.map((activity, index) => (
+                      <div key={activity.id || index} className="flex items-center justify-between rounded-lg bg-white/5 p-4 transition-colors hover:bg-white/10">
+                        <div className="flex items-center gap-4">
+                          {getActivityIcon(activity.event)}
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm font-medium text-white">
+                                {getActivityType(activity)}
+                              </p>
+                              {getActivityDirection(activity) && (
+                                <span className="text-xs text-gray-500">
+                                  {getActivityDirection(activity)}
+                                </span>
+                              )}
+                            </div>
+                            <p className="mt-1 text-xs text-gray-500">
+                              {formatTimestamp(activity.timestamp)}
+                            </p>
+                            {formatRecipient(activity) && (
+                              <p className="mt-0.5 font-mono text-xs text-gray-600">
+                                {formatRecipient(activity)}
+                              </p>
+                            )}
+                            {activity.signature && (
+                              <a
+                                href={`https://explorer.solana.com/tx/${activity.signature}?cluster=custom&customUrl=http://127.0.0.1:8899`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="font-mono text-xs text-blue-400 hover:text-blue-300"
+                              >
+                                {activity.signature.slice(0, 8)}...
+                              </a>
                             )}
                           </div>
-                          <div className="text-right">
-                            <div className="text-2xl font-bold text-gray-900">
-                              {formatNoteAmount(note.amount)} SOL
-                            </div>
-                          </div>
                         </div>
-                        
-                        <div className="space-y-2 text-sm">
-                          {note.commitment && (
-                            <div className="flex justify-between">
-                              <span className="text-gray-500">Commitment:</span>
-                              <span className="text-gray-900 font-mono text-xs">
-                                {note.commitment.slice(0, 10)}...{note.commitment.slice(-8)}
-                              </span>
-                            </div>
-                          )}
-                          {note.tokenId !== undefined && (
-                            <div className="flex justify-between">
-                              <span className="text-gray-500">Token:</span>
-                              <span className="text-gray-900">
-                                {note.tokenId === 0 ? 'SOL (Native)' : `Token ${note.tokenId}`}
-                              </span>
-                            </div>
-                          )}
+                        <div className="text-right">
+                          <div className={`text-sm font-semibold ${
+                            (getActivityDirection(activity) === 'Received' || getActivityType(activity) === 'Change')
+                              ? 'text-green-400'
+                              : getActivityDirection(activity) === 'Sent'
+                              ? 'text-red-400'
+                              : 'text-white'
+                          }`}>
+                            {getActivityDirection(activity) === 'Sent' ? '-' :
+                             (getActivityDirection(activity) === 'Received' || getActivityType(activity) === 'Change') ? '+' : ''}
+                            {activity.amount !== null && activity.amount !== undefined
+                              ? activity.amount.toFixed(4)
+                              : (getActivityDirection(activity) === 'Sent' ? 'Sent' : '?')}
+                            {(activity.amount !== null && activity.amount !== undefined) && (
+                              <span className="ml-1 text-xs text-gray-500">SOL</span>
+                            )}
+                          </div>
                         </div>
                       </div>
                     ))}
                   </div>
                 )}
+
+                {/* Pagination Controls */}
+                {totalActivities > activitiesPerPage && (
+                  <>
+                    <div className="mt-6 flex items-center justify-between border-t border-white/10 pt-4">
+                      <div className="flex items-center space-x-2">
+                        {Array.from({ length: Math.ceil(totalActivities / activitiesPerPage) }, (_, i) => i + 1)
+                          .filter(page => {
+                            const totalPages = Math.ceil(totalActivities / activitiesPerPage);
+                            if (totalPages <= 7) return true;
+                            if (page === 1 || page === totalPages) return true;
+                            if (Math.abs(page - currentPage) <= 1) return true;
+                            return false;
+                          })
+                          .map((page, index, array) => {
+                            const prevPage = array[index - 1];
+                            const showEllipsisBefore = prevPage && page - prevPage > 1;
+
+                            return (
+                              <div key={page} className="flex items-center">
+                                {showEllipsisBefore && (
+                                  <span className="px-2 text-gray-500">...</span>
+                                )}
+                                <button
+                                  onClick={() => fetchRecentActivities(page)}
+                                  className={`rounded-md px-3 py-1.5 text-sm font-medium ${
+                                    currentPage === page
+                                      ? 'bg-blue-600 text-white'
+                                      : 'border border-white/10 bg-white/5 text-gray-300 hover:bg-white/10'
+                                  }`}
+                                >
+                                  {page}
+                                </button>
+                              </div>
+                            );
+                          })}
+                      </div>
+                    </div>
+
+                    {/* Simple Navigation Buttons */}
+                    <div className="mt-4 flex items-center justify-center space-x-2">
+                      <button
+                        onClick={() => fetchRecentActivities(1)}
+                        disabled={currentPage === 1}
+                        className="rounded-md border border-white/10 bg-white/5 px-4 py-2 text-lg font-medium text-gray-300 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+                        title="First page"
+                      >
+                        &laquo;
+                      </button>
+                      <button
+                        onClick={() => fetchRecentActivities(currentPage - 1)}
+                        disabled={currentPage === 1}
+                        className="rounded-md border border-white/10 bg-white/5 px-4 py-2 text-lg font-medium text-gray-300 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+                        title="Previous page"
+                      >
+                        &lsaquo;
+                      </button>
+                      <button
+                        onClick={() => fetchRecentActivities(currentPage + 1)}
+                        disabled={currentPage >= Math.ceil(totalActivities / activitiesPerPage)}
+                        className="rounded-md border border-white/10 bg-white/5 px-4 py-2 text-lg font-medium text-gray-300 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+                        title="Next page"
+                      >
+                        &rsaquo;
+                      </button>
+                      <button
+                        onClick={() => fetchRecentActivities(Math.ceil(totalActivities / activitiesPerPage))}
+                        disabled={currentPage >= Math.ceil(totalActivities / activitiesPerPage)}
+                        className="rounded-md border border-white/10 bg-white/5 px-4 py-2 text-lg font-medium text-gray-300 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+                        title="Last page"
+                      >
+                        &raquo;
+                      </button>
+                    </div>
+                  </>
+                )}
+
+                {/* Page info */}
+                {totalActivities > 0 && (
+                  <div className="mt-2 text-center text-xs text-gray-500">
+                    Showing {((currentPage - 1) * activitiesPerPage) + 1} to {Math.min(currentPage * activitiesPerPage, totalActivities)} of {totalActivities} activities
+                  </div>
+                )}
               </div>
-              
-              <div className="p-6 border-t border-gray-200 bg-gray-50">
-                <div className="flex justify-between items-center text-sm">
-                  <span className="text-gray-600">
-                    Total: {(selectedNoteType === 'spendable' ? spendableNotes : allNotes).length} notes
-                  </span>
+
+              {/* Right column: Status cards */}
+              <div className="space-y-6">
+                <div ref={solanaStatusRef} className="scroll-mt-6">
+                  <SolanaStatus />
+                </div>
+                <div ref={sdkStatusRef} className="scroll-mt-6">
+                  <SDKStatus />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Footer */}
+          <footer className="flex flex-col items-center justify-between gap-4 border-t border-white/10 px-8 py-6 text-sm text-gray-500 md:flex-row">
+            <p>© {new Date().getFullYear()} CipherPay. All rights reserved.</p>
+            <nav className="flex gap-6">
+              {['Docs', 'Privacy', 'Terms', 'Support'].map((link) => (
+                <a key={link} href="#" className="hover:text-gray-300">
+                  {link}
+                </a>
+              ))}
+            </nav>
+          </footer>
+        </div>
+      </div>
+
+      {/* Approve Delegate Modal */}
+      {showApproveModal && (
+        <div className="fixed inset-0 z-50 h-full w-full overflow-y-auto bg-black/60" onClick={() => setShowApproveModal(false)}>
+          <div className="relative top-20 mx-auto w-96 rounded-xl border border-white/10 bg-[#0d1220] p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="mb-4 text-lg font-medium text-white">Approve Relayer Delegate</h3>
+            <p className="mb-4 text-sm text-gray-400">
+              This is a one-time setup that allows the relayer to process deposits on your behalf.
+              You're approving the relayer to spend up to the specified amount of tokens from your wallet.
+            </p>
+            <div className="mb-4">
+              <label className="mb-2 block text-sm font-medium text-gray-300">
+                Approval Amount (SOL)
+              </label>
+              <input
+                type="number"
+                step="0.1"
+                min="0"
+                value={approveAmount}
+                onChange={(e) => setApproveAmount(e.target.value)}
+                className="w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-white focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                placeholder="10.0"
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                Recommended: Approve enough for multiple deposits to avoid frequent approvals
+              </p>
+            </div>
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => {
+                  setShowApproveModal(false);
+                  setApproveAmount('10');
+                }}
+                className="rounded-md bg-white/10 px-4 py-2 text-gray-200 hover:bg-white/20"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleApproveDelegate}
+                disabled={actionLoading || !approveAmount}
+                className="rounded-md bg-gradient-to-r from-blue-500 to-purple-600 px-4 py-2 text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {actionLoading ? 'Processing...' : 'Approve Delegate'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Destroy ATA Confirmation Modal */}
+      {showDestroyAtaModal && (
+        <div className="fixed inset-0 z-50 h-full w-full overflow-y-auto bg-black/60" onClick={() => setShowDestroyAtaModal(false)}>
+          <div className="relative top-20 mx-auto w-96 rounded-xl border border-white/10 bg-[#0d1220] p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="mb-4 text-lg font-medium text-white">Destroy ATA &amp; Reclaim SOL</h3>
+            <p className="mb-4 text-sm text-gray-400">
+              This will close your wSOL token account and move <strong className="text-gray-200">{formatBalance(ataBalance)} SOL</strong> to your wallet as native SOL. You will need to create a new ATA when you deposit again.
+            </p>
+            <p className="mb-4 text-sm text-amber-400">
+              Are you sure you want to proceed?
+            </p>
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => setShowDestroyAtaModal(false)}
+                className="rounded-md bg-white/10 px-4 py-2 text-gray-200 hover:bg-white/20"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    setActionLoading(true);
+                    await destroyAta();
+                    setShowDestroyAtaModal(false);
+                    clearError();
+                    // Refresh balances (ATA is now closed, SOL moved to wallet)
+                    setAtaBalance(0);
+                    const res = await fetch(`/api/wallet/balance?pubkey=${wallet.publicKey.toBase58()}`);
+                    const json = await res.json();
+                    if (json.ok) setWalletBalance(json.walletBalance);
+                    refreshData();
+                  } catch (err) {
+                    console.error('[Dashboard] destroyAta failed:', err);
+                  } finally {
+                    setActionLoading(false);
+                  }
+                }}
+                disabled={actionLoading}
+                className="rounded-md bg-amber-600 px-4 py-2 text-white hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {actionLoading ? 'Processing...' : 'Confirm'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Error Modal - friendly display for action failures */}
+      {showErrorModal && (
+        <div
+          className="fixed inset-0 z-50 flex h-full w-full items-center justify-center overflow-y-auto bg-black/60 p-4"
+          onClick={() => { setShowErrorModal(false); setErrorModalContent({ title: '', message: '' }); }}
+        >
+          <div className="relative mx-auto w-full max-w-md rounded-xl border border-white/10 bg-[#0d1220] p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start">
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-red-500/15">
+                <X className="h-5 w-5 text-red-400" />
+              </div>
+              <div className="ml-4 flex-1">
+                <h3 className="text-lg font-medium text-white">{errorModalContent.title}</h3>
+                <p className="mt-2 whitespace-pre-wrap text-sm text-gray-400">{errorModalContent.message}</p>
+                <div className="mt-6">
                   <button
-                    onClick={() => setShowNotesModal(false)}
-                    className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
+                    type="button"
+                    onClick={() => {
+                      setShowErrorModal(false);
+                      setErrorModalContent({ title: '', message: '' });
+                    }}
+                    className="flex w-full items-center justify-center rounded-md bg-red-600 px-4 py-2 text-base font-medium text-white hover:bg-red-500"
                   >
-                    Close
+                    OK
                   </button>
                 </div>
               </div>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
+
+      {/* Deposit Modal */}
+      {showDepositModal && (
+        <div className="fixed inset-0 z-50 h-full w-full overflow-y-auto bg-black/60" onClick={() => setShowDepositModal(false)}>
+          <div className="relative top-20 mx-auto w-96 rounded-xl border border-white/10 bg-[#0d1220] p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="mb-4 text-lg font-medium text-white">Deposit Funds</h3>
+            <div className="mb-4">
+              <label className="mb-2 block text-sm font-medium text-gray-300">
+                Amount (SOL)
+              </label>
+              <input
+                type="number"
+                step="0.001"
+                min="0"
+                value={depositAmount}
+                onChange={(e) => setDepositAmount(e.target.value)}
+                className="w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-white focus:border-green-500 focus:outline-none focus:ring-2 focus:ring-green-500/30"
+                placeholder="0.0"
+              />
+            </div>
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => {
+                  setShowDepositModal(false);
+                  setDepositAmount('');
+                }}
+                className="rounded-md bg-white/10 px-4 py-2 text-gray-200 hover:bg-white/20"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeposit}
+                disabled={actionLoading || !depositAmount}
+                className="rounded-md bg-green-600 px-4 py-2 text-white hover:bg-green-500 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {actionLoading ? 'Processing...' : 'Deposit'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Transfer Modal */}
+      {showTransferModal && (
+        <div className="fixed inset-0 z-50 h-full w-full overflow-y-auto bg-black/60" onClick={closeTransferModal}>
+          <div className="relative top-20 mx-auto w-96 rounded-xl border border-white/10 bg-[#0d1220] p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="mb-4 text-lg font-medium text-white">Transfer Funds</h3>
+            <div className="mb-4">
+              <label className="mb-2 block text-sm font-medium text-gray-300">
+                Recipient Username or Address
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={transferRecipient}
+                  onChange={handleRecipientChange}
+                  className={`w-full rounded-md border bg-white/5 px-3 py-2 pr-10 text-white focus:outline-none focus:ring-2 ${
+                    recipientLookupStatus === 'not_found'
+                      ? 'border-red-500/40 focus:border-red-500 focus:ring-red-500/30'
+                      : recipientLookupStatus === 'found'
+                      ? 'border-green-500/40 focus:border-green-500 focus:ring-green-500/30'
+                      : 'border-white/10 focus:border-blue-500 focus:ring-blue-500/30'
+                  }`}
+                  placeholder="@alice or 0x..."
+                />
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
+                  {recipientLookupStatus === 'loading' && <Loader2 className="h-5 w-5 animate-spin text-gray-500" />}
+                  {recipientLookupStatus === 'found' && <Check className="h-5 w-5 text-green-400" />}
+                  {recipientLookupStatus === 'not_found' && <X className="h-5 w-5 text-red-400" />}
+                </div>
+              </div>
+              {recipientLookupStatus === 'found' && resolvedRecipientInfo && (
+                <p className="mt-1 text-sm text-green-400">
+                  ✓ Found @{resolvedRecipientInfo.username}
+                </p>
+              )}
+              {recipientLookupStatus === 'not_found' && (
+                <p className="mt-1 text-sm text-red-400">
+                  User not found. Please check the username or enter a public key.
+                </p>
+              )}
+              {!recipientLookupStatus && (
+                <p className="mt-1 text-xs text-gray-500">
+                  Enter @username or full public key (0x...)
+                </p>
+              )}
+            </div>
+            <div className="mb-4">
+              <label className="mb-2 block text-sm font-medium text-gray-300">
+                Amount (SOL)
+              </label>
+              <input
+                type="number"
+                step="0.001"
+                min="0"
+                value={transferAmount}
+                onChange={(e) => setTransferAmount(e.target.value)}
+                className="w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-white focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                placeholder="0.0"
+              />
+            </div>
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={closeTransferModal}
+                className="rounded-md bg-white/10 px-4 py-2 text-gray-200 hover:bg-white/20"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleTransfer}
+                disabled={actionLoading || !transferAmount || !transferRecipient}
+                className="rounded-md bg-blue-600 px-4 py-2 text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {actionLoading ? 'Processing...' : 'Transfer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Note Selection Modal for Withdraw */}
+      {showNoteSelectionModal && (
+        <div className="fixed inset-0 z-50 h-full w-full overflow-y-auto bg-black/60" onClick={() => setShowNoteSelectionModal(false)}>
+          <div className="relative top-20 mx-auto w-96 rounded-xl border border-white/10 bg-[#0d1220] p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="mb-4 text-lg font-medium text-white">Select Note to Withdraw</h3>
+            <p className="mb-4 text-sm text-gray-400">
+              Select a note to withdraw. The full amount of the selected note will be withdrawn to your Solana wallet.
+            </p>
+            <div className="mb-4 max-h-96 overflow-y-auto">
+              {withdrawableNotes.length === 0 ? (
+                <p className="py-4 text-center text-gray-500">No withdrawable notes available</p>
+              ) : (
+                <div className="space-y-2">
+                  {withdrawableNotes.map((note, index) => (
+                    <button
+                      key={index}
+                      onClick={() => handleNoteSelect(note)}
+                      disabled={actionLoading}
+                      className="w-full rounded-md border border-white/10 bg-white/5 p-3 text-left transition-colors hover:border-blue-500/40 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-medium text-white">
+                            {note.amountFormatted || (Number(note.amount) / 1e9).toFixed(9) + ' SOL'}
+                          </p>
+                          <p className="mt-1 text-xs text-gray-500">
+                            Note #{index + 1}
+                            {note.commitment && (
+                              <span className="ml-2">({note.commitment.slice(0, 8)}...)</span>
+                            )}
+                          </p>
+                        </div>
+                        <ArrowRight className="h-5 w-5 text-blue-400" />
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => {
+                  setShowNoteSelectionModal(false);
+                  setWithdrawableNotes([]);
+                }}
+                className="rounded-md bg-white/10 px-4 py-2 text-gray-200 hover:bg-white/20"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Notes Details Modal */}
+      {showNotesModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="flex max-h-[80vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-white/10 bg-[#0d1220]">
+            <div className="border-b border-white/10 p-6">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-white">
+                  {selectedNoteType === 'spendable' ? 'Spendable Notes' : 'All Notes'} Details
+                </h3>
+                <button
+                  onClick={() => setShowNotesModal(false)}
+                  className="text-gray-500 hover:text-gray-300"
+                >
+                  <X className="h-6 w-6" />
+                </button>
+              </div>
+              <p className="mt-2 text-sm text-gray-400">
+                {selectedNoteType === 'spendable'
+                  ? 'Notes available for transfers and withdrawals'
+                  : 'All notes including spent ones'}
+              </p>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6">
+              {(selectedNoteType === 'spendable' ? spendableNotes : allNotes).length === 0 ? (
+                <div className="py-8 text-center text-gray-500">
+                  <FileStack className="mx-auto mb-4 h-16 w-16 text-gray-700" />
+                  <p className="text-lg font-medium text-gray-300">No notes found</p>
+                  <p className="mt-2 text-sm">Deposit funds to create your first note</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {(selectedNoteType === 'spendable' ? spendableNotes : allNotes).map((note, index) => (
+                    <div key={index} className="rounded-lg border border-white/10 bg-white/5 p-4">
+                      <div className="mb-3 flex items-start justify-between">
+                        <div className="flex items-center space-x-2">
+                          <span className="text-sm font-medium text-gray-300">Note #{index + 1}</span>
+                          {note.spent || note.isSpent ? (
+                            <span className="rounded bg-red-500/15 px-2 py-1 text-xs font-medium text-red-400">
+                              Spent
+                            </span>
+                          ) : (
+                            <span className="rounded bg-green-500/15 px-2 py-1 text-xs font-medium text-green-400">
+                              Spendable
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-2xl font-bold text-white">
+                          {formatNoteAmount(note.amount)} SOL
+                        </div>
+                      </div>
+
+                      <div className="space-y-2 text-sm">
+                        {note.commitment && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-500">Commitment:</span>
+                            <span className="font-mono text-xs text-gray-300">
+                              {note.commitment.slice(0, 10)}...{note.commitment.slice(-8)}
+                            </span>
+                          </div>
+                        )}
+                        {note.tokenId !== undefined && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-500">Token:</span>
+                            <span className="text-gray-300">
+                              {note.tokenId === 0 ? 'SOL (Native)' : `Token ${note.tokenId}`}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-white/10 bg-white/5 p-6">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-gray-400">
+                  Total: {(selectedNoteType === 'spendable' ? spendableNotes : allNotes).length} notes
+                </span>
+                <button
+                  onClick={() => setShowNotesModal(false)}
+                  className="rounded-md bg-gradient-to-r from-blue-500 to-purple-600 px-4 py-2 text-white hover:opacity-90"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-export default Dashboard; 
+export default Dashboard;

@@ -100,7 +100,7 @@ function SDKStatus() {
 
         if (isInitialized) {
             checkSDKStatus();
-            
+
             // Re-check periodically in case SDK initializes components lazily
             const interval = setInterval(checkSDKStatus, 2000);
             return () => clearInterval(interval);
@@ -184,90 +184,86 @@ function SDKStatus() {
         }
     }, [isInitialized]);
 
+    const badgeClasses = (ok, checking) =>
+        ok
+            ? 'bg-green-500/15 text-green-400'
+            : checking
+            ? 'bg-white/10 text-gray-400'
+            : 'bg-yellow-500/15 text-yellow-400';
+
     if (!isInitialized) {
         return (
-            <div className="bg-white overflow-hidden shadow rounded-lg">
-                <div className="px-4 py-5 sm:p-6">
-                    <h2 className="text-lg font-medium text-gray-900 mb-4">SDK Status</h2>
-                    <div className="text-sm text-gray-500">SDK not initialized</div>
-                </div>
+            <div className="rounded-xl border border-white/10 bg-[#0d1220] p-6">
+                <h2 className="mb-4 text-base font-semibold text-white">SDK Status</h2>
+                <div className="text-sm text-gray-400">SDK not initialized</div>
             </div>
         );
     }
 
     return (
-        <div className="bg-white overflow-hidden shadow rounded-lg">
-            <div className="px-4 py-5 sm:p-6">
-                <h2 className="text-lg font-medium text-gray-900 mb-4">SDK Components Status</h2>
+        <div className="rounded-xl border border-white/10 bg-[#0d1220] p-6">
+            <h2 className="mb-4 text-base font-semibold text-white">SDK Components Status</h2>
 
-                <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium text-gray-500">Relayer Client</span>
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${sdkStatus.hasRelayerClient ? 'text-green-600 bg-green-100' : 'text-red-600 bg-red-100'
-                            }`}>
-                            {sdkStatus.hasRelayerClient ? '✅ Available' : '❌ Not Available'}
-                        </span>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium text-gray-500">Merkle Tree Client</span>
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                            (sdkStatus.hasMerkleTreeClient || backendStatus.merkleTreeAvailable) 
-                                ? 'text-green-600 bg-green-100' 
-                                : backendStatus.checking 
-                                    ? 'text-gray-600 bg-gray-100' 
-                                    : 'text-yellow-600 bg-yellow-100'
-                            }`}>
-                            {sdkStatus.hasMerkleTreeClient 
-                                ? '✅ Available (SDK)' 
-                                : backendStatus.merkleTreeAvailable 
-                                    ? '✅ Available (Backend)' 
-                                    : backendStatus.checking
-                                        ? '⏳ Checking...'
-                                        : '⚠️ Not Available'}
-                        </span>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium text-gray-500">Wallet Provider</span>
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                            sdkStatus.hasWalletProvider ? 'text-green-600 bg-green-100' : 'text-green-600 bg-green-100'
-                            }`}>
-                            {sdkStatus.hasWalletProvider ? '✅ Available (SDK)' : '✅ Available (Solana Adapter)'}
-                        </span>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium text-gray-500">Note Manager</span>
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                            (sdkStatus.hasNoteManager || backendStatus.noteManagerAvailable) 
-                                ? 'text-green-600 bg-green-100' 
-                                : backendStatus.checking 
-                                    ? 'text-gray-600 bg-gray-100' 
-                                    : 'text-yellow-600 bg-yellow-100'
-                            }`}>
-                            {sdkStatus.hasNoteManager 
-                                ? '✅ Available (SDK)' 
-                                : backendStatus.noteManagerAvailable 
-                                    ? '✅ Available (Backend)' 
-                                    : backendStatus.checking
-                                        ? '⏳ Checking...'
-                                        : '⚠️ Not Available'}
-                        </span>
-                    </div>
+            <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-400">Relayer Client</span>
+                    <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${badgeClasses(sdkStatus.hasRelayerClient, false)}`}>
+                        <span className={`h-1.5 w-1.5 rounded-full ${sdkStatus.hasRelayerClient ? 'bg-green-400' : 'bg-yellow-400'}`} />
+                        {sdkStatus.hasRelayerClient ? 'Available' : 'Not Available'}
+                    </span>
                 </div>
 
-                {sdk && (
-                    <div className="mt-4 p-3 bg-gray-50 rounded-md">
-                        <h3 className="text-sm font-medium text-gray-700 mb-2">SDK Configuration</h3>
-                        <div className="text-xs font-mono text-gray-600">
-                            <div>Chain Type: {sdk.config?.chainType || 'Unknown'}</div>
-                            <div>RPC URL: {sdk.config?.rpcUrl || 'Not set'}</div>
-                            <div>Relayer URL: {sdk.config?.relayerUrl || 'Not set'}</div>
-                        </div>
-                    </div>
-                )}
+                <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-400">Merkle Tree Client</span>
+                    <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${badgeClasses(sdkStatus.hasMerkleTreeClient || backendStatus.merkleTreeAvailable, backendStatus.checking)}`}>
+                        <span className={`h-1.5 w-1.5 rounded-full ${
+                            (sdkStatus.hasMerkleTreeClient || backendStatus.merkleTreeAvailable) ? 'bg-green-400' : backendStatus.checking ? 'bg-gray-400' : 'bg-yellow-400'
+                        }`} />
+                        {sdkStatus.hasMerkleTreeClient
+                            ? 'Available (SDK)'
+                            : backendStatus.merkleTreeAvailable
+                                ? 'Available (Backend)'
+                                : backendStatus.checking
+                                    ? 'Checking...'
+                                    : 'Not Available'}
+                    </span>
+                </div>
+
+                <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-400">Wallet Provider</span>
+                    <span className="inline-flex items-center gap-1 rounded-full bg-green-500/15 px-2.5 py-0.5 text-xs font-medium text-green-400">
+                        <span className="h-1.5 w-1.5 rounded-full bg-green-400" />
+                        {sdkStatus.hasWalletProvider ? 'Available (SDK)' : 'Available (Solana Adapter)'}
+                    </span>
+                </div>
+
+                <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-400">Note Manager</span>
+                    <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${badgeClasses(sdkStatus.hasNoteManager || backendStatus.noteManagerAvailable, backendStatus.checking)}`}>
+                        <span className={`h-1.5 w-1.5 rounded-full ${
+                            (sdkStatus.hasNoteManager || backendStatus.noteManagerAvailable) ? 'bg-green-400' : backendStatus.checking ? 'bg-gray-400' : 'bg-yellow-400'
+                        }`} />
+                        {sdkStatus.hasNoteManager
+                            ? 'Available (SDK)'
+                            : backendStatus.noteManagerAvailable
+                                ? 'Available (Backend)'
+                                : backendStatus.checking
+                                    ? 'Checking...'
+                                    : 'Not Available'}
+                    </span>
+                </div>
             </div>
+
+            {sdk && (
+                <div className="mt-4 rounded-lg border border-white/10 bg-white/5 p-3">
+                    <h3 className="mb-2 text-sm font-medium text-gray-300">SDK Configuration</h3>
+                    <div className="space-y-0.5 font-mono text-xs text-gray-400">
+                        <div>Chain Type: {sdk.config?.chainType || 'Unknown'}</div>
+                        <div>RPC URL: {sdk.config?.rpcUrl || 'Not set'}</div>
+                        <div>Relayer URL: {sdk.config?.relayerUrl || 'Not set'}</div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

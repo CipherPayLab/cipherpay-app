@@ -34,7 +34,7 @@ function SolanaStatus() {
                 // Create AbortController for timeout
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 5000);
-                
+
                 // Get auth token if available (endpoint is public but token might be needed)
                 const token = localStorage.getItem('cipherpay_token');
                 const headers = {
@@ -43,13 +43,13 @@ function SolanaStatus() {
                 if (token) {
                     headers['Authorization'] = `Bearer ${token}`;
                 }
-                
+
                 const response = await fetch(healthUrl, {
                     method: 'GET',
                     headers,
                     signal: controller.signal,
                 });
-                
+
                 clearTimeout(timeoutId);
 
                 if (!response.ok) {
@@ -62,11 +62,11 @@ function SolanaStatus() {
                 }
 
                 const data = await response.json();
-                
+
                 // Handle different health status formats
                 if (data.status) {
-                    status = data.status === 'healthy' || data.status === 'alive' ? 'healthy' : 
-                            data.status === 'degraded' ? 'degraded' : 
+                    status = data.status === 'healthy' || data.status === 'alive' ? 'healthy' :
+                            data.status === 'degraded' ? 'degraded' :
                             data.status === 'unhealthy' ? 'unhealthy' : 'unhealthy';
                 } else if (data.ok) {
                     status = 'healthy';
@@ -196,33 +196,33 @@ function SolanaStatus() {
         };
     }, [isInitialized, sdk]);
 
-    const getStatusColor = (status) => {
+    const getStatusBadgeClasses = (status) => {
         switch (status) {
             case 'healthy':
-                return 'text-green-600 bg-green-100';
+                return 'bg-green-500/15 text-green-400';
             case 'degraded':
-                return 'text-yellow-600 bg-yellow-100';
+                return 'bg-yellow-500/15 text-yellow-400';
             case 'unhealthy':
-                return 'text-red-600 bg-red-100';
+                return 'bg-red-500/15 text-red-400';
             case 'unreachable':
-                return 'text-orange-600 bg-orange-100';
+                return 'bg-orange-500/15 text-orange-400';
             default:
-                return 'text-gray-600 bg-gray-100';
+                return 'bg-white/10 text-gray-400';
         }
     };
 
-    const getStatusIcon = (status) => {
+    const getStatusDotClasses = (status) => {
         switch (status) {
             case 'healthy':
-                return '✅';
+                return 'bg-green-400';
             case 'degraded':
-                return '⚠️';
+                return 'bg-yellow-400';
             case 'unhealthy':
-                return '❌';
+                return 'bg-red-400';
             case 'unreachable':
-                return '🔴';
+                return 'bg-orange-400';
             default:
-                return '⏳';
+                return 'bg-gray-400';
         }
     };
 
@@ -236,91 +236,85 @@ function SolanaStatus() {
     };
 
     return (
-        <div className="bg-white overflow-hidden shadow rounded-lg">
-            <div className="px-4 py-5 sm:p-6">
-                <h2 className="text-lg font-medium text-gray-900 mb-4">Solana Integration Status</h2>
+        <div className="rounded-xl border border-white/10 bg-[#0d1220] p-6">
+            <h2 className="mb-4 text-base font-semibold text-white">Solana Integration Status</h2>
 
-                <div className="space-y-4">
-                    {/* Service Status */}
+            <div className="space-y-4">
+                {/* Service Status */}
+                <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-400">CipherPay Service</span>
+                    <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${isInitialized ? 'bg-green-500/15 text-green-400' : 'bg-red-500/15 text-red-400'}`}>
+                        <span className={`h-1.5 w-1.5 rounded-full ${isInitialized ? 'bg-green-400' : 'bg-red-400'}`} />
+                        {isInitialized ? 'Operational' : 'Not Initialized'}
+                    </span>
+                </div>
+
+                {/* Relayer Status */}
+                <div className="space-y-1">
                     <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium text-gray-500">CipherPay Service</span>
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${isInitialized ? 'text-green-600 bg-green-100' : 'text-red-600 bg-red-100'}`}>
-                            {isInitialized ? '✅ Initialized' : '❌ Not Initialized'}
+                        <div className="flex items-center gap-2">
+                            <span className="text-sm text-gray-400">Solana Relayer</span>
+                            <div className="group relative">
+                                <svg className="h-4 w-4 cursor-help text-gray-500" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                                </svg>
+                                <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 w-64 -translate-x-1/2 transform rounded-lg border border-white/10 bg-[#05070f] p-2 text-xs text-gray-300 opacity-0 shadow-xl transition-opacity group-hover:opacity-100">
+                                    The Solana Relayer (cipherpay-relayer-solana) maintains the Merkle tree for private notes, computes zero-knowledge proofs, and submits transactions to Solana on your behalf. It enables gasless, private transactions. Health status is checked through the backend server (cipherpay-server).
+                                </div>
+                            </div>
+                        </div>
+                        <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${getStatusBadgeClasses(relayerStatus)}`}>
+                            <span className={`h-1.5 w-1.5 rounded-full ${getStatusDotClasses(relayerStatus)}`} />
+                            {relayerStatus === 'checking' ? 'Checking...' : relayerStatus.charAt(0).toUpperCase() + relayerStatus.slice(1)}
                         </span>
                     </div>
-
-                    {/* Relayer Status */}
-                    <div className="space-y-1">
-                        <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                                <span className="text-sm font-medium text-gray-500">Solana Relayer</span>
-                                <div className="group relative">
-                                    <svg className="h-4 w-4 text-gray-400 cursor-help" fill="currentColor" viewBox="0 0 20 20">
-                                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
-                                    </svg>
-                                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-64 p-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
-                                        The Solana Relayer (cipherpay-relayer-solana) maintains the Merkle tree for private notes, computes zero-knowledge proofs, and submits transactions to Solana on your behalf. It enables gasless, private transactions. Health status is checked through the backend server (cipherpay-server).
-                                    </div>
-                                </div>
-                            </div>
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(relayerStatus)}`}>
-                                {getStatusIcon(relayerStatus)} {relayerStatus === 'checking' ? 'Checking...' : relayerStatus.charAt(0).toUpperCase() + relayerStatus.slice(1)}
+                    <div className="flex items-center justify-between">
+                        <span className="text-xs text-gray-500">{relayerStatusMessage}</span>
+                        {lastCheckTime && (
+                            <span className="text-xs text-gray-500">
+                                Last check: {formatLastCheckTime(lastCheckTime)}
                             </span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                            <span className="text-xs text-gray-400">{relayerStatusMessage}</span>
-                            {lastCheckTime && (
-                                <span className="text-xs text-gray-400">
-                                    Last check: {formatLastCheckTime(lastCheckTime)}
+                        )}
+                    </div>
+                </div>
+
+                {/* Merkle Root */}
+                {merkleRoot && (
+                    <div className="flex items-center justify-between">
+                        <span className="text-sm text-gray-400">Merkle Root</span>
+                        <span className="font-mono text-xs text-gray-300">
+                            {merkleRoot.slice(0, 10)}...{merkleRoot.slice(-8)}
+                        </span>
+                    </div>
+                )}
+
+                {/* Supported Circuits */}
+                {circuits.length > 0 && (
+                    <div>
+                        <span className="text-sm text-gray-400">Supported Circuits</span>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                            {circuits.map((circuit, index) => (
+                                <span
+                                    key={index}
+                                    className="inline-flex items-center rounded-full bg-blue-500/15 px-2.5 py-0.5 text-xs font-medium text-blue-300"
+                                >
+                                    {circuit.name}
                                 </span>
-                            )}
+                            ))}
                         </div>
                     </div>
+                )}
 
-                    {/* Merkle Root */}
-                    {merkleRoot && (
-                        <div className="flex items-center justify-between">
-                            <span className="text-sm font-medium text-gray-500">Merkle Root</span>
-                            <span className="text-xs font-mono text-gray-600">
-                                {merkleRoot.slice(0, 10)}...{merkleRoot.slice(-8)}
-                            </span>
-                        </div>
-                    )}
-
-                    {/* Supported Circuits */}
-                    {circuits.length > 0 && (
-                        <div>
-                            <span className="text-sm font-medium text-gray-500">Supported Circuits</span>
-                            <div className="mt-2 flex flex-wrap gap-2">
-                                {circuits.map((circuit, index) => (
-                                    <span
-                                        key={index}
-                                        className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
-                                    >
-                                        {circuit.name}
-                                    </span>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Error Display */}
-                    {error && (
-                        <div className="mt-4 bg-red-50 border border-red-200 rounded-md p-4">
-                            <div className="flex">
-                                <div className="ml-3">
-                                    <h3 className="text-sm font-medium text-red-800">Error</h3>
-                                    <div className="mt-2 text-sm text-red-700">
-                                        <p>{error}</p>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-                </div>
+                {/* Error Display */}
+                {error && (
+                    <div className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 p-4">
+                        <h3 className="text-sm font-medium text-red-300">Error</h3>
+                        <p className="mt-2 text-sm text-red-400">{error}</p>
+                    </div>
+                )}
             </div>
         </div>
     );
 }
 
-export default SolanaStatus; 
+export default SolanaStatus;

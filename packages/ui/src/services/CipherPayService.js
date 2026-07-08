@@ -1288,23 +1288,24 @@ class CipherPayService {
     }
 
     // Delegate Approval (One-time setup before deposits)
+    // Builds and signs the approve-delegate transaction directly (the wallet must sign
+    // client-side — only it holds the private key), but reads (relayer info, wallet
+    // balance, latest blockhash) and the final submit+confirm are proxied through the
+    // backend instead of the SDK's own direct connection.* calls — the browser cannot
+    // reliably hold a direct connection to the local validator in this environment.
     async approveRelayerDelegate(params) {
         try {
             console.log('[CipherPayService] approveRelayerDelegate called with params:', params);
-            
+
             // Validate required parameters
-            if (!params.connection) throw new Error('Solana connection is required');
-            if (!params.wallet) throw new Error('Wallet is required');
+            if (!params.wallet?.publicKey) throw new Error('Wallet is required');
+            if (!params.wallet?.signTransaction) throw new Error('Connected wallet does not support signTransaction');
             if (!params.tokenMint) throw new Error('Token mint address is required');
             if (!params.amount) throw new Error('Amount is required');
-            
-            // Check if SDK function is available
-            if (!window.CipherPaySDK?.approveRelayerDelegate) {
-                throw new Error('SDK approveRelayerDelegate function not available. Ensure the SDK bundle is loaded.');
-            }
+
+            const serverUrl = getServerBaseUrl();
 
             // Get relayer public key via server proxy (server reaches relayer at localhost; browser cannot)
-            const serverUrl = getServerBaseUrl();
             const response = await fetch(`${serverUrl}/api/relayer/info`);
             if (!response.ok) {
                 throw new Error(`Failed to get relayer info: ${response.status}`);
@@ -1316,23 +1317,70 @@ class CipherPayService {
             }
             console.log('[CipherPayService] Relayer pubkey:', relayerPubkey);
 
-            // Import PublicKey
-            const { PublicKey } = await import('@solana/web3.js');
+            const { PublicKey, Transaction } = await import('@solana/web3.js');
+            const {
+                getAssociatedTokenAddressSync,
+                createAssociatedTokenAccountIdempotentInstruction,
+                createApproveCheckedInstruction,
+            } = await import('@solana/spl-token');
 
-            // Call SDK approveRelayerDelegate
-            const result = await window.CipherPaySDK.approveRelayerDelegate({
-                connection: params.connection,
-                wallet: params.wallet,
-                tokenMint: new PublicKey(params.tokenMint),
-                relayerPubkey: new PublicKey(relayerPubkey),
-                amount: BigInt(params.amount),
+            const walletPublicKey = params.wallet.publicKey;
+            const tokenMintPk = new PublicKey(params.tokenMint);
+            const relayerPubKey = new PublicKey(relayerPubkey);
+            const userTokenAccount = getAssociatedTokenAddressSync(tokenMintPk, walletPublicKey);
+
+            // wSOL always has 9 decimals; this app currently only approves the delegate for wSOL.
+            const WSOL_MINT = 'So11111111111111111111111111111111111111112';
+            const decimals = params.tokenMint === WSOL_MINT ? 9 : (params.decimals ?? 9);
+
+            // Sanity-check the wallet has enough SOL for fees (proxied read).
+            const balanceRes = await fetch(`${serverUrl}/api/wallet/balance?pubkey=${walletPublicKey.toBase58()}`);
+            const balanceJson = await balanceRes.json();
+            if (balanceJson.ok && balanceJson.walletBalance < 5000) {
+                throw new Error(`Insufficient SOL for transaction fees. Need at least 0.000005 SOL (5000 lamports), have ${balanceJson.walletBalance} lamports.`);
+            }
+
+            const tx = new Transaction();
+            // Idempotent — safe to include even if the ATA already exists.
+            tx.add(createAssociatedTokenAccountIdempotentInstruction(
+                walletPublicKey, // payer
+                userTokenAccount,
+                walletPublicKey, // owner
+                tokenMintPk
+            ));
+            tx.add(createApproveCheckedInstruction(
+                userTokenAccount,
+                tokenMintPk,
+                relayerPubKey,
+                walletPublicKey,
+                BigInt(params.amount),
+                decimals
+            ));
+
+            const blockhashRes = await fetch(`${serverUrl}/api/wallet/latest-blockhash`);
+            const blockhashJson = await blockhashRes.json();
+            if (!blockhashJson.ok) throw new Error(blockhashJson.error || 'Failed to fetch latest blockhash');
+
+            tx.feePayer = walletPublicKey;
+            tx.recentBlockhash = blockhashJson.blockhash;
+
+            console.log('[CipherPayService] Signing delegate approval transaction...');
+            const signedTx = await params.wallet.signTransaction(tx);
+            const serialized = signedTx.serialize().toString('base64');
+
+            const submitRes = await fetch(`${serverUrl}/api/wallet/submit-transaction`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ signedTransaction: serialized, commitment: 'confirmed' }),
             });
-            
-            console.log('[CipherPayService] Delegate approval completed:', result);
-            
+            const submitJson = await submitRes.json();
+            if (!submitJson.ok) throw new Error(submitJson.error || 'Failed to submit transaction');
+
+            console.log('[CipherPayService] Delegate approval completed:', submitJson.signature);
+
             return {
-                signature: result.signature,
-                userTokenAccount: result.userTokenAccount.toBase58(),
+                signature: submitJson.signature,
+                userTokenAccount: userTokenAccount.toBase58(),
             };
         } catch (error) {
             console.error('[CipherPayService] Failed to approve relayer delegate:', error);
@@ -1342,57 +1390,22 @@ class CipherPayService {
 
     /**
      * Check if the relayer is already approved as delegate for the user's wSOL token account.
-     * Reads on-chain state so we don't prompt for approval on every login.
-     * Uses manual buffer parsing to avoid spl-token getAccount BigInt conversion issues.
-     * @param {{ connection: Connection, walletPublicKey: string, tokenMint?: string }} params
+     * Reads on-chain state so we don't prompt for approval on every login. The actual account
+     * lookup + buffer parsing happens server-side (see wallet.delegate-approved.get.ts) — the
+     * browser cannot reliably hold a direct connection to the local validator in this environment.
+     * @param {{ walletPublicKey: string, tokenMint?: string }} params
      * @returns {Promise<boolean>}
      */
     async checkRelayerDelegateApproved(params) {
         try {
-            const { connection, walletPublicKey, tokenMint = 'So11111111111111111111111111111111111111112' } = params;
-            if (!connection || !walletPublicKey) return false;
+            const { walletPublicKey, tokenMint = 'So11111111111111111111111111111111111111112' } = params;
+            if (!walletPublicKey) return false;
 
-            const { PublicKey } = await import('@solana/web3.js');
-            const { getAssociatedTokenAddressSync } = await import('@solana/spl-token');
-
-            // Use server proxy for relayer info (server reaches relayer at localhost; browser cannot)
             const serverUrl = getServerBaseUrl();
-            const response = await fetch(`${serverUrl}/api/relayer/info`);
+            const response = await fetch(`${serverUrl}/api/wallet/delegate-approved?wallet=${walletPublicKey}&tokenMint=${tokenMint}`);
             if (!response.ok) return false;
-            const info = await response.json();
-            const relayerPubkey = info?.relayerPubkey ?? info?.relayerPubKey;
-            if (!relayerPubkey) {
-                console.warn('[CipherPayService] checkRelayerDelegateApproved: relayer info missing relayerPubkey');
-                return false;
-            }
-            console.log('[CipherPayService] checkRelayerDelegateApproved: relayer pubkey =', relayerPubkey);
-            const relayerPubKey = new PublicKey(relayerPubkey);
-
-            const userAta = getAssociatedTokenAddressSync(
-                new PublicKey(tokenMint),
-                new PublicKey(walletPublicKey)
-            );
-            const accountInfo = await connection.getAccountInfo(userAta);
-            if (!accountInfo || !accountInfo.data) return false;
-
-            const data = accountInfo.data;
-            if (data.length < 129) return false;
-
-            // SPL Token account layout: delegate COption at 72 (4 byte flag + 32 byte pubkey)
-            // delegated_amount u64 at 121 (8 bytes)
-            const delegateOption = data.readUInt32LE(72);
-            if (delegateOption !== 1) return false;
-
-            const delegateBytes = new Uint8Array(data.buffer, data.byteOffset + 76, 32);
-            const relayerBytes = relayerPubKey.toBytes();
-            const delegateMatches = delegateBytes.length === relayerBytes.length &&
-                delegateBytes.every((b, i) => b === relayerBytes[i]);
-
-            if (!delegateMatches) return false;
-
-            const view = new DataView(data.buffer, data.byteOffset + 121, 8);
-            const delegatedAmount = view.getBigUint64(0, true);
-            return delegatedAmount > 0n;
+            const data = await response.json();
+            return !!data.approved;
         } catch (err) {
             console.warn('[CipherPayService] checkRelayerDelegateApproved failed:', err?.message || err);
             return false;
