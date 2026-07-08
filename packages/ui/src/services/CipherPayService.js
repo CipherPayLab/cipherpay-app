@@ -356,7 +356,6 @@ class CipherPayService {
             }
             
             if (normalizedRecipientKey === senderOwnerKeyHex) {
-                alert('Cannot transfer to yourself!');
                 throw new Error('Cannot transfer to yourself!');
             }
 
@@ -435,7 +434,6 @@ class CipherPayService {
             const ownerKeyValidation = validateOwnerCipherPayPubKey(normalizedRecipientKey);
             if (!ownerKeyValidation.valid) {
                 console.error('[CipherPayService] Invalid owner_cipherpay_pub_key format:', ownerKeyValidation.error);
-                alert('Invalid recipient!');
                 throw new Error(`Invalid recipient! ${ownerKeyValidation.error}`);
             }
             
@@ -450,19 +448,16 @@ class CipherPayService {
                 
                 if (!response.ok) {
                     if (response.status === 404) {
-                        alert('Invalid recipient!');
                         throw new Error('Invalid recipient! Recipient not found or missing required keys.');
                     } else {
                         const errorText = await response.text();
                         console.error('[CipherPayService] Failed to validate recipient:', response.status, errorText);
-                        alert('Invalid recipient!');
                         throw new Error(`Failed to validate recipient: ${response.status}`);
                     }
                 }
                 
                 const data = await response.json();
                 if (!data.noteEncPubKey) {
-                    alert('Invalid recipient!');
                     throw new Error('Invalid recipient! Recipient missing note encryption public key.');
                 }
                 
@@ -470,7 +465,6 @@ class CipherPayService {
                 const noteEncKeyValidation = validateNoteEncPubKey(data.noteEncPubKey);
                 if (!noteEncKeyValidation.valid) {
                     console.error('[CipherPayService] Invalid note_enc_pub_key format:', noteEncKeyValidation.error);
-                    alert('Invalid recipient!');
                     throw new Error(`Invalid recipient! Corrupted note_enc_pub_key: ${noteEncKeyValidation.error}`);
                 }
                 
@@ -482,7 +476,6 @@ class CipherPayService {
                 }
                 // Otherwise, it's a network/API error
                 console.error('[CipherPayService] Error validating recipient:', error);
-                alert('Invalid recipient!');
                 throw new Error('Invalid recipient! Failed to verify recipient in database.');
             }
 

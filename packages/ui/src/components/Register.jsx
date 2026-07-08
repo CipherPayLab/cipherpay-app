@@ -1,7 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Info, AlertTriangle } from 'lucide-react';
 import { useCipherPay } from '../contexts/CipherPayContext';
 import WalletSelector from './WalletSelector';
+import MessageModal from './MessageModal';
+
+const INFO_MODAL_ICONS = { info: Info, error: AlertTriangle };
 
 function Register() {
   const navigate = useNavigate();
@@ -18,6 +22,8 @@ function Register() {
 
   const [registrationStep, setRegistrationStep] = useState('form'); // form, wallet-selection, authenticating, success
   const [isConnecting, setIsConnecting] = useState(false);
+  const [infoModal, setInfoModal] = useState(null); // { title, message, tone }
+  const showInfoModal = (title, message, tone = 'info') => setInfoModal({ title, message, tone });
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -32,7 +38,7 @@ function Register() {
   const handleSignUp = (e) => {
     e.preventDefault();
     if (!isInitialized) {
-      alert('CipherPay service is still initializing. Please wait...');
+      showInfoModal('Still initializing', 'CipherPay service is still initializing. Please wait...');
       return;
     }
     // Show wallet selection UI
@@ -42,7 +48,7 @@ function Register() {
 
   const handleWalletConnect = () => {
     if (!isInitialized) {
-      alert('CipherPay service is still initializing. Please wait...');
+      showInfoModal('Still initializing', 'CipherPay service is still initializing. Please wait...');
       return;
     }
     // Show wallet selection UI
@@ -53,7 +59,7 @@ function Register() {
   // Handle wallet connection from WalletSelector
   const handleWalletConnected = async (walletAddress) => {
     if (!isInitialized) {
-      alert('CipherPay service is still initializing. Please wait...');
+      showInfoModal('Still initializing', 'CipherPay service is still initializing. Please wait...');
       return;
     }
 
@@ -76,7 +82,7 @@ function Register() {
       // The useEffect will handle this via isAuthenticated
     } catch (err) {
       console.error('Failed to connect wallet and sign up:', err);
-      alert(`Registration failed: ${err.message || 'Unknown error'}`);
+      showInfoModal('Registration failed', err.message || 'Unknown error', 'error');
       setRegistrationStep('wallet-selection');
     } finally {
       setIsConnecting(false);
@@ -224,8 +230,19 @@ function Register() {
           </div>
         )}
       </div>
+
+      <MessageModal
+        open={!!infoModal}
+        onClose={() => setInfoModal(null)}
+        tone={infoModal?.tone || 'info'}
+        icon={INFO_MODAL_ICONS[infoModal?.tone || 'info']}
+        title={infoModal?.title}
+        description={infoModal?.message}
+        primaryLabel="OK"
+        onPrimary={() => setInfoModal(null)}
+      />
     </div>
   );
 }
 
-export default Register; 
+export default Register;

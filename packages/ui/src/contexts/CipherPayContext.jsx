@@ -2,9 +2,11 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { getAssociatedTokenAddressSync, NATIVE_MINT, TOKEN_PROGRAM_ID, createAssociatedTokenAccountInstruction, createSyncNativeInstruction, createCloseAccountInstruction } from '@solana/spl-token';
 import { SystemProgram, Transaction } from '@solana/web3.js';
+import { Clock } from 'lucide-react';
 import cipherPayService from '../services';
 import { parseFriendlyErrorMessage } from '../utils/errorMessages';
 import authService from '../services/authService';
+import MessageModal from '../components/MessageModal';
 
 const CipherPayContext = createContext();
 
@@ -78,6 +80,7 @@ export const CipherPayProvider = ({ children }) => {
     // This prevents false authentication state from stale tokens
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [authUser, setAuthUser] = useState(null);
+    const [sessionExpiredOpen, setSessionExpiredOpen] = useState(false);
     
     // Store event handler references for cleanup
     const eventHandlersRef = useRef({
@@ -378,10 +381,8 @@ export const CipherPayProvider = ({ children }) => {
                 // Show clear error message
                 const errorMsg = 'Your session has expired. Please sign in again to transfer funds.';
                 setError(errorMsg);
-                alert(errorMsg);
-                
-                // Redirect to login page
-                window.location.href = '/';
+                // Redirect happens once the user acknowledges the session-expired modal
+                setSessionExpiredOpen(true);
                 throw new Error('Session expired');
             }
             
@@ -489,10 +490,8 @@ export const CipherPayProvider = ({ children }) => {
                 // Show clear error message
                 const errorMsg = 'Your session has expired. Please sign in again to deposit funds.';
                 setError(errorMsg);
-                alert(errorMsg);
-                
-                // Redirect to login page
-                window.location.href = '/';
+                // Redirect happens once the user acknowledges the session-expired modal
+                setSessionExpiredOpen(true);
                 throw new Error('Session expired');
             }
             
@@ -799,10 +798,8 @@ export const CipherPayProvider = ({ children }) => {
                 // Show clear error message
                 const errorMsg = 'Your session has expired. Please sign in again to withdraw funds.';
                 setError(errorMsg);
-                alert(errorMsg);
-                
-                // Redirect to login page
-                window.location.href = '/';
+                // Redirect happens once the user acknowledges the session-expired modal
+                setSessionExpiredOpen(true);
                 throw new Error('Session expired');
             }
             
@@ -1068,10 +1065,9 @@ export const CipherPayProvider = ({ children }) => {
                 
                 // Stop monitoring
                 clearInterval(intervalId);
-                
-                // Alert user and redirect
-                alert('Your session has expired. Please sign in again.');
-                window.location.href = '/';
+
+                // Alert user; redirect happens once they acknowledge the modal
+                setSessionExpiredOpen(true);
             }
         }, 60000); // Check every 60 seconds
         
@@ -1226,9 +1222,24 @@ export const CipherPayProvider = ({ children }) => {
         clearError
     };
 
+    const handleSessionExpiredAck = () => {
+        setSessionExpiredOpen(false);
+        window.location.href = '/';
+    };
+
     return (
         <CipherPayContext.Provider value={value}>
             {children}
+            <MessageModal
+                open={sessionExpiredOpen}
+                onClose={handleSessionExpiredAck}
+                tone="error"
+                icon={Clock}
+                title="Session expired"
+                description="Your session has expired. Please sign in again."
+                primaryLabel="Sign In"
+                onPrimary={handleSessionExpiredAck}
+            />
         </CipherPayContext.Provider>
     );
-}; 
+};

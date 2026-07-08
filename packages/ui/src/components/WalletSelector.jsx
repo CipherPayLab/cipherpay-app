@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
-import { Check, CheckCircle2, ChevronDown, Grid2x2, Loader2 } from 'lucide-react';
+import { AlertTriangle, Check, CheckCircle2, ChevronDown, Grid2x2, Loader2 } from 'lucide-react';
+import MessageModal from './MessageModal';
 
 function WalletSelector({ onWalletConnected, onWalletDisconnected }) {
   const { publicKey, connected, disconnect, wallet, wallets, select, connecting, connect } = useWallet();
   const [showWalletList, setShowWalletList] = useState(false);
+  const [connectionError, setConnectionError] = useState(null);
   const prevConnectedRef = useRef(false); // Track previous connection state
 
   const uniqueWallets = wallets.reduce((unique, w) => {
@@ -60,7 +62,7 @@ function WalletSelector({ onWalletConnected, onWalletDisconnected }) {
       console.error('Error connecting wallet:', error);
       if (error.name !== 'WalletConnectionUserCancelledError') {
         // Only log errors that aren't user cancellations
-        alert(`Connection failed: ${error.message}`);
+        setConnectionError(error.message || 'Unknown error');
       }
     }
   };
@@ -117,6 +119,15 @@ function WalletSelector({ onWalletConnected, onWalletDisconnected }) {
 
   return (
     <div className="space-y-4">
+      <MessageModal
+        open={!!connectionError}
+        onClose={() => setConnectionError(null)}
+        tone="error"
+        icon={AlertTriangle}
+        title="Connection failed"
+        description={connectionError}
+      />
+
       <div className="space-y-2">
         <h3 className="text-sm font-medium text-gray-400">Selected wallet</h3>
         <button

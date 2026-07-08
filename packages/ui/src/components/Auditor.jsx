@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Info } from 'lucide-react';
 import { useCipherPay } from '../contexts/CipherPayContext';
+import MessageModal from './MessageModal';
 
 function Auditor() {
   const navigate = useNavigate();
@@ -25,6 +27,8 @@ function Auditor() {
   const [viewKey, setViewKey] = useState('');
   const [auditResult, setAuditResult] = useState(null);
   const [auditStep, setAuditStep] = useState('form'); // form, auditing, success
+  const [infoModal, setInfoModal] = useState(null); // { title, message }
+  const showInfoModal = (title, message) => setInfoModal({ title, message });
 
   useEffect(() => {
     if (!isConnected) {
@@ -36,7 +40,7 @@ function Auditor() {
     e.preventDefault();
 
     if (!isConnected) {
-      alert('Please connect your wallet first');
+      showInfoModal('Wallet required', 'Please connect your wallet first.');
       return;
     }
 
@@ -81,7 +85,7 @@ function Auditor() {
 
   const handleGetMerklePath = async () => {
     if (!commitment) {
-      alert('Please enter a commitment');
+      showInfoModal('Commitment required', 'Please enter a commitment.');
       return;
     }
 
@@ -432,6 +436,16 @@ function Auditor() {
           </div>
         )}
       </div>
+
+      <MessageModal
+        open={!!infoModal}
+        onClose={() => setInfoModal(null)}
+        icon={Info}
+        title={infoModal?.title}
+        description={infoModal?.message}
+        primaryLabel="OK"
+        onPrimary={() => setInfoModal(null)}
+      />
     </div>
   );
 }

@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Info } from 'lucide-react';
 import { useCipherPay } from '../contexts/CipherPayContext';
+import MessageModal from './MessageModal';
 
 function Transaction() {
   const navigate = useNavigate();
@@ -20,6 +22,8 @@ function Transaction() {
   const [transactionStep, setTransactionStep] = useState('form'); // form, creating, sending, success
   const [transactionHash, setTransactionHash] = useState('');
   const [selectedNotes, setSelectedNotes] = useState([]);
+  const [infoModal, setInfoModal] = useState(null); // { title, message }
+  const showInfoModal = (title, message) => setInfoModal({ title, message });
 
   useEffect(() => {
     if (!isConnected) {
@@ -31,22 +35,22 @@ function Transaction() {
     e.preventDefault();
 
     if (!isConnected) {
-      alert('Please connect your wallet first');
+      showInfoModal('Wallet required', 'Please connect your wallet first.');
       return;
     }
 
     if (Number(amount) <= 0) {
-      alert('Please enter a valid amount');
+      showInfoModal('Invalid amount', 'Please enter a valid amount.');
       return;
     }
 
     if (!recipient || recipient.length < 42) {
-      alert('Please enter a valid recipient address');
+      showInfoModal('Invalid recipient', 'Please enter a valid recipient address.');
       return;
     }
 
     if (Number(amount) > Number(balance) / 1e18) {
-      alert('Insufficient balance');
+      showInfoModal('Insufficient balance', "You don't have enough balance for this transaction.");
       return;
     }
 
@@ -303,6 +307,16 @@ function Transaction() {
           </div>
         )}
       </div>
+
+      <MessageModal
+        open={!!infoModal}
+        onClose={() => setInfoModal(null)}
+        icon={Info}
+        title={infoModal?.title}
+        description={infoModal?.message}
+        primaryLabel="OK"
+        onPrimary={() => setInfoModal(null)}
+      />
     </div>
   );
 }
