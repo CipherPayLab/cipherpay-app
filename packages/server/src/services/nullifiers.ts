@@ -6,17 +6,21 @@ import { prisma } from "../db/prisma.js";
 import { normalizeNullifierHex } from "./nullifierUtils.js";
 
 const SOLANA_RPC_URL = process.env.SOLANA_RPC_URL || "http://localhost:8899";
-const PROGRAM_ID = process.env.SOLANA_PROGRAM_ID || "WRy4hstBsD6hxb7CJN4R3fgLnafs621N7EjUhZ2afze";
+const PROGRAM_ID =
+  process.env.SOLANA_PROGRAM_ID ||
+  "AWVNBHaF1upXopq9dQpRpY54c9113bBskqiv16MUTDDd";
 const NULLIFIER_SEED = Buffer.from("nullifier");
 
 /**
  * Derive nullifier PDA address from nullifier bytes
  */
-export function deriveNullifierPda(nullifierBytes: Buffer | Uint8Array): PublicKey {
+export function deriveNullifierPda(
+  nullifierBytes: Buffer | Uint8Array,
+): PublicKey {
   const programId = new PublicKey(PROGRAM_ID);
   const [pda] = PublicKey.findProgramAddressSync(
     [NULLIFIER_SEED, Buffer.from(nullifierBytes)],
-    programId
+    programId,
   );
   return pda;
 }
@@ -26,14 +30,14 @@ export function deriveNullifierPda(nullifierBytes: Buffer | Uint8Array): PublicK
  */
 export async function checkNullifierOnChain(
   nullifierBytes: Buffer | Uint8Array,
-  connection?: Connection
+  connection?: Connection,
 ): Promise<{ used: boolean; txSignature?: string; spentAt?: Date } | null> {
   const conn = connection || new Connection(SOLANA_RPC_URL, "confirmed");
   const pda = deriveNullifierPda(nullifierBytes);
 
   try {
     const accountInfo = await conn.getAccountInfo(pda);
-    
+
     if (!accountInfo) {
       // PDA doesn't exist = nullifier not used
       return { used: false };
@@ -55,7 +59,9 @@ export async function checkNullifierOnChain(
       const signatures = await conn.getSignaturesForAddress(pda, { limit: 1 });
       if (signatures.length > 0) {
         txSignature = signatures[0].signature;
-        spentAt = new Date(signatures[0].blockTime ? signatures[0].blockTime * 1000 : Date.now());
+        spentAt = new Date(
+          signatures[0].blockTime ? signatures[0].blockTime * 1000 : Date.now(),
+        );
       }
     } catch (e) {
       // Ignore errors fetching transaction
@@ -78,12 +84,18 @@ export async function checkNullifierOnChain(
  */
 export async function upsertNullifier(
   nullifierBytes: Buffer | Uint8Array,
-  onChainData: { used: boolean; txSignature?: string; spentAt?: Date; eventType?: string },
-  nullifierHexOverride?: string
+  onChainData: {
+    used: boolean;
+    txSignature?: string;
+    spentAt?: Date;
+    eventType?: string;
+  },
+  nullifierHexOverride?: string,
 ): Promise<void> {
   // Use the override hex (big-endian, matches messages.nullifier_hex) when provided,
   // otherwise fall back to the raw bytes hex (e.g. from syncNullifier where bytes are already BE).
-  const nullifierHex = nullifierHexOverride ?? Buffer.from(nullifierBytes).toString("hex");
+  const nullifierHex =
+    nullifierHexOverride ?? Buffer.from(nullifierBytes).toString("hex");
   const pda = deriveNullifierPda(nullifierBytes);
   const nullifierBuffer = Buffer.from(nullifierBytes);
 
@@ -110,7 +122,10 @@ export async function upsertNullifier(
       },
     });
   } catch (error) {
-    console.warn("[nullifiers] Prisma upsert failed, falling back to raw SQL:", error);
+    console.warn(
+      "[nullifiers] Prisma upsert failed, falling back to raw SQL:",
+      error,
+    );
     // Fallback to raw SQL if Prisma model not available yet
     try {
       await prisma.$executeRaw`
@@ -153,10 +168,10 @@ export async function upsertNullifier(
  */
 export async function syncNullifier(
   nullifierBytes: Buffer | Uint8Array,
-  connection?: Connection
+  connection?: Connection,
 ): Promise<boolean> {
   const onChainData = await checkNullifierOnChain(nullifierBytes, connection);
-  
+
   if (!onChainData) {
     return false;
   }
@@ -170,7 +185,7 @@ export async function syncNullifier(
  */
 export async function syncNullifiersBatch(
   nullifierBytesArray: (Buffer | Uint8Array)[],
-  connection?: Connection
+  connection?: Connection,
 ): Promise<{ synced: number; failed: number }> {
   const conn = connection || new Connection(SOLANA_RPC_URL, "confirmed");
   let synced = 0;
@@ -180,7 +195,7 @@ export async function syncNullifiersBatch(
   const BATCH_SIZE = 10;
   for (let i = 0; i < nullifierBytesArray.length; i += BATCH_SIZE) {
     const batch = nullifierBytesArray.slice(i, i + BATCH_SIZE);
-    
+
     await Promise.all(
       batch.map(async (nullifierBytes) => {
         try {
@@ -191,7 +206,7 @@ export async function syncNullifiersBatch(
           console.error(`Failed to sync nullifier:`, error);
           failed++;
         }
-      })
+      }),
     );
 
     // Small delay between batches
@@ -209,7 +224,7 @@ export async function syncNullifiersBatch(
  * For now, returns nullifiers from tx table where user is sender
  */
 export async function getUserNullifiers(
-  ownerCipherPayPubKey: string
+  ownerCipherPayPubKey: string,
 ): Promise<string[]> {
   // Get nullifiers from tx table where user is sender (they spent notes)
   try {
@@ -234,7 +249,7 @@ export async function getUserNullifiers(
  */
 export async function isNullifierSpent(
   nullifierHex: string,
-  checkOnChain: boolean = false
+  checkOnChain: boolean = false,
 ): Promise<boolean> {
   const normalizedHex = normalizeNullifierHex(nullifierHex);
 
@@ -271,7 +286,7 @@ export async function isNullifierSpent(
   if (checkOnChain) {
     const nullifierBytes = Buffer.from(normalizedHex, "hex");
     const onChainData = await checkNullifierOnChain(nullifierBytes);
-    
+
     if (onChainData) {
       await upsertNullifier(nullifierBytes, onChainData);
       return onChainData.used;
@@ -287,11 +302,10 @@ export async function isNullifierSpent(
  */
 export async function syncUserNullifiers(
   ownerCipherPayPubKey: string,
-  connection?: Connection
+  connection?: Connection,
 ): Promise<{ synced: number; failed: number }> {
   const nullifierHexes = await getUserNullifiers(ownerCipherPayPubKey);
   const nullifierBytes = nullifierHexes.map((hex) => Buffer.from(hex, "hex"));
-  
+
   return await syncNullifiersBatch(nullifierBytes, connection);
 }
-
