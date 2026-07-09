@@ -1,11 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useWallet } from '@solana/wallet-adapter-react';
-import { Mail, ShieldCheck, Zap, Wallet, Check, X, Loader2 } from 'lucide-react';
+import { Mail, ShieldCheck, Zap, Wallet, Check, X, Loader2, ShieldAlert, Info, AlertTriangle } from 'lucide-react';
 import { FaXTwitter, FaDiscord, FaGithub } from 'react-icons/fa6';
 import { useCipherPay } from '../contexts/CipherPayContext';
 import WalletSelector from './WalletSelector';
+import MessageModal from './MessageModal';
 import authService from '../services/authService';
+
+const INFO_MODAL_ICONS = { info: Info, error: AlertTriangle };
 
 const NAV_LINKS = ['Features', 'Security', 'Docs', 'About'];
 const FOOTER_LINKS = ['Privacy', 'Terms', 'Docs', 'Status', 'Support'];
@@ -34,6 +37,8 @@ function Login() {
   const [usernameAvailable, setUsernameAvailable] = useState(null);
   const [checkingUsername, setCheckingUsername] = useState(false);
   const [isNewUser, setIsNewUser] = useState(false); // Default to Sign In (returning users)
+  const [showSignUpRequiredModal, setShowSignUpRequiredModal] = useState(false);
+  const [infoModal, setInfoModal] = useState(null); // { title, message, tone }
   const navigate = useNavigate();
   const hasNavigated = useRef(false);
   const sessionAuthenticatedRef = useRef(false); // Track if authenticated in THIS session
@@ -136,10 +141,12 @@ function Login() {
     }
   };
 
+  const showInfoModal = (title, message, tone = 'info') => setInfoModal({ title, message, tone });
+
   // Handle wallet connection from WalletSelector
   const handleWalletConnected = async (walletAddress) => {
     if (!isInitialized) {
-      alert('CipherPay service is still initializing. Please wait...');
+      showInfoModal('Still initializing', 'CipherPay service is still initializing. Please wait...');
       return;
     }
 
@@ -160,20 +167,20 @@ function Login() {
     // For new users, require username
     if (isNewUser) {
       if (!username || username.length < 3) {
-        alert('Please enter a username (at least 3 characters)');
+        showInfoModal('Username required', 'Please enter a username (at least 3 characters).');
         // Disconnect wallet so user stays on sign-up screen
         await disconnectWallet();
         return;
       }
       if (usernameAvailable === false) {
-        alert('This username is not available. Please choose another one.');
+        showInfoModal('Username unavailable', 'This username is not available. Please choose another one.');
         // Disconnect wallet so user stays on sign-up screen
         await disconnectWallet();
         return;
       }
       if (!usernameAvailable) {
         // Still checking or not checked yet
-        alert('Please wait while we check username availability...');
+        showInfoModal('Please wait', 'Please wait while we check username availability...');
         // Disconnect wallet so user stays on sign-up screen
         await disconnectWallet();
         return;
@@ -213,21 +220,25 @@ function Login() {
       if (errorData?.error === 'missing_username' ||
           errorData?.message?.includes('Username is required for new users')) {
         // User tried to sign in but doesn't have an account
-        alert('You have to sign up firstly');
-        setIsNewUser(true); // Switch to Sign Up tab
         await disconnectWallet(); // Disconnect so they can reconnect with username
+        setShowSignUpRequiredModal(true);
         return;
       }
 
       // Check if error is due to missing username
       if (err.message?.includes('username') || err.message?.includes('Username')) {
-        alert(`Username required: ${err.message}. Please enter a username and try again.`);
+        showInfoModal('Username required', `${err.message}. Please enter a username and try again.`, 'error');
       } else {
-        alert(`Authentication failed: ${err.message || 'Unknown error'}`);
+        showInfoModal('Authentication failed', err.message || 'Unknown error', 'error');
       }
     } finally {
       setIsConnecting(false);
     }
+  };
+
+  const handleGoToSignUp = () => {
+    setShowSignUpRequiredModal(false);
+    setIsNewUser(true); // Switch to Sign Up tab
   };
 
   const handleWalletDisconnected = () => {
@@ -238,13 +249,13 @@ function Login() {
   const handleSignIn = async (e) => {
     e.preventDefault();
     if (!isInitialized) {
-      alert('CipherPay service is still initializing. Please wait...');
+      showInfoModal('Still initializing', 'CipherPay service is still initializing. Please wait...');
       return;
     }
 
     // Check if wallet is connected
     if (!walletConnected || !publicKey) {
-      alert('Please connect a wallet first');
+      showInfoModal('Wallet required', 'Please connect a wallet first.');
       return;
     }
 
@@ -275,7 +286,7 @@ function Login() {
       navigate('/dashboard');
     } catch (err) {
       console.error('Sign in failed:', err);
-      alert(`Sign in failed: ${err.message || 'Unknown error'}`);
+      showInfoModal('Sign in failed', err.message || 'Unknown error', 'error');
     } finally {
       setIsConnecting(false);
     }
@@ -545,6 +556,29 @@ function Login() {
           </p>
         </footer>
       </div>
+
+      <MessageModal
+        open={showSignUpRequiredModal}
+        onClose={() => setShowSignUpRequiredModal(false)}
+        icon={ShieldAlert}
+        title="Sign up required"
+        description="We couldn't find an account for this wallet. Create one to continue — it only takes a few seconds."
+        secondaryLabel="Cancel"
+        onSecondary={() => setShowSignUpRequiredModal(false)}
+        primaryLabel="Go to Sign Up"
+        onPrimary={handleGoToSignUp}
+      />
+
+      <MessageModal
+        open={!!infoModal}
+        onClose={() => setInfoModal(null)}
+        tone={infoModal?.tone || 'info'}
+        icon={INFO_MODAL_ICONS[infoModal?.tone || 'info']}
+        title={infoModal?.title}
+        description={infoModal?.message}
+        primaryLabel="OK"
+        onPrimary={() => setInfoModal(null)}
+      />
     </div>
   );
 }

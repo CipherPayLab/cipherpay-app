@@ -9,6 +9,7 @@ This system tracks which notes have been spent by maintaining a database of null
 ### Database Schema
 
 **`nullifiers` table:**
+
 - `nullifier` (BINARY(32)): The 32-byte nullifier value
 - `nullifier_hex` (CHAR(64)): Hex representation for easy querying
 - `pda_address` (VARCHAR(44)): Solana PDA address for this nullifier
@@ -19,11 +20,13 @@ This system tracks which notes have been spent by maintaining a database of null
 - `synced_at` (TIMESTAMP): Last sync time with on-chain
 
 **`tx` table enhancement:**
+
 - Added `nullifier_hex` column to link transactions with nullifiers
 
 ### On-Chain Structure
 
 The `cipherpay-anchor` program stores nullifiers as PDAs:
+
 - **Seeds**: `[b"nullifier", nullifier_bytes]`
 - **Account**: `NullifierRecord` with fields:
   - `used: bool` - Whether the nullifier has been spent
@@ -39,9 +42,11 @@ The `cipherpay-anchor` program stores nullifiers as PDAs:
 ## API Endpoints
 
 ### `POST /api/v1/nullifiers/sync`
+
 Sync all nullifiers for the authenticated user.
 
 **Response:**
+
 ```json
 {
   "ok": true,
@@ -52,12 +57,15 @@ Sync all nullifiers for the authenticated user.
 ```
 
 ### `POST /api/v1/nullifiers/sync/:nullifierHex`
+
 Sync a specific nullifier by hex string.
 
 **Parameters:**
+
 - `nullifierHex`: 64-character hex string (32 bytes)
 
 **Response:**
+
 ```json
 {
   "ok": true,
@@ -66,12 +74,15 @@ Sync a specific nullifier by hex string.
 ```
 
 ### `GET /api/v1/nullifiers/check/:nullifierHex?checkOnChain=true`
+
 Check if a nullifier is spent.
 
 **Query Parameters:**
+
 - `checkOnChain` (optional): If true, check on-chain if not in database
 
 **Response:**
+
 ```json
 {
   "ok": true,
@@ -95,14 +106,17 @@ Check if a nullifier is spent.
 ### Sync Strategies
 
 **Option 1: On-Demand Sync**
+
 - User requests sync via API endpoint
 - Good for: Manual refresh, after transactions
 
 **Option 2: Periodic Sync**
+
 - Background job syncs nullifiers periodically
 - Good for: Keeping database up-to-date automatically
 
 **Option 3: Event-Driven Sync**
+
 - Sync when transactions are processed
 - Good for: Real-time updates
 
@@ -113,13 +127,14 @@ Check if a nullifier is spent.
 ```typescript
 const [pda] = PublicKey.findProgramAddressSync(
   [Buffer.from("nullifier"), nullifierBytes],
-  programId
+  programId,
 );
 ```
 
 ### On-Chain Account Decoding
 
 The `NullifierRecord` account layout:
+
 - Bytes 0-7: Anchor discriminator
 - Byte 8: `used` (0 = false, 1 = true)
 - Byte 9: `bump`
@@ -127,7 +142,7 @@ The `NullifierRecord` account layout:
 ### Environment Variables
 
 - `SOLANA_RPC_URL`: Solana RPC endpoint (default: `http://localhost:8899`)
-- `SOLANA_PROGRAM_ID`: CipherPay Anchor program ID (default: `WRy4hstBsD6hxb7CJN4R3fgLnafs621N7EjUhZ2afze`)
+- `SOLANA_PROGRAM_ID`: CipherPay Anchor program ID (default: `AWVNBHaF1upXopq9dQpRpY54c9113bBskqiv16MUTDDd`)
 
 ## Future Enhancements
 
@@ -135,4 +150,3 @@ The `NullifierRecord` account layout:
 2. **Note Decryption Service**: Service to decrypt `messages.ciphertext` and extract nullifiers
 3. **Background Sync Job**: Periodic job to sync all nullifiers
 4. **Webhook Integration**: Sync nullifiers when relayer processes transactions
-

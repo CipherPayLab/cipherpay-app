@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Info } from 'lucide-react';
 import { useCipherPay } from '../contexts/CipherPayContext';
+import MessageModal from './MessageModal';
 
 function Proof() {
   const navigate = useNavigate();
@@ -24,6 +26,8 @@ function Proof() {
   const [verificationResult, setVerificationResult] = useState(null);
   const [viewKey, setViewKey] = useState('');
   const [proofStep, setProofStep] = useState('form'); // form, generating, success
+  const [infoModal, setInfoModal] = useState(null); // { title, message }
+  const showInfoModal = (title, message) => setInfoModal({ title, message });
 
   useEffect(() => {
     if (!isConnected) {
@@ -35,7 +39,7 @@ function Proof() {
     e.preventDefault();
 
     if (!isConnected) {
-      alert('Please connect your wallet first');
+      showInfoModal('Wallet required', 'Please connect your wallet first.');
       return;
     }
 
@@ -77,7 +81,7 @@ function Proof() {
 
   const handleVerifyProof = async () => {
     if (!generatedProof) {
-      alert('No proof to verify');
+      showInfoModal('No proof to verify', 'Generate a proof first.');
       return;
     }
 
@@ -354,6 +358,16 @@ function Proof() {
           </div>
         )}
       </div>
+
+      <MessageModal
+        open={!!infoModal}
+        onClose={() => setInfoModal(null)}
+        icon={Info}
+        title={infoModal?.title}
+        description={infoModal?.message}
+        primaryLabel="OK"
+        onPrimary={() => setInfoModal(null)}
+      />
     </div>
   );
 }

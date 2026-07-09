@@ -10,7 +10,7 @@ const SOLANA_RPC_URL = process.env.SOLANA_RPC_URL || "http://localhost:8899";
 const PROGRAM_ID =
   process.env.SOLANA_PROGRAM_ID ||
   process.env.PROGRAM_ID ||
-  "WRy4hstBsD6hxb7CJN4R3fgLnafs621N7EjUhZ2afze";
+  "AWVNBHaF1upXopq9dQpRpY54c9113bBskqiv16MUTDDd";
 const REDIS_URL = process.env.REDIS_URL;
 
 // Anchor IDL type definitions
@@ -104,24 +104,32 @@ export class OnChainEventListener {
         await this.redis.connect();
         console.log("[EventListener] Redis connected for event publishing");
       } catch (error) {
-        console.warn("[EventListener] Redis connection failed, SSE won't work:", error);
+        console.warn(
+          "[EventListener] Redis connection failed, SSE won't work:",
+          error,
+        );
       }
     }
 
     console.log(
-      `[EventListener] Starting on-chain event monitoring for program: ${this.programId.toBase58()}`
+      `[EventListener] Starting on-chain event monitoring for program: ${this.programId.toBase58()}`,
     );
     console.log(`[EventListener] RPC URL: ${SOLANA_RPC_URL}`);
 
     try {
-      const programAccount = await this.connection.getAccountInfo(this.programId);
+      const programAccount = await this.connection.getAccountInfo(
+        this.programId,
+      );
       if (!programAccount) {
         console.warn(
-          `[EventListener] Program account not found on this RPC. Check SOLANA_PROGRAM_ID/PROGRAM_ID and SOLANA_RPC_URL.`
+          `[EventListener] Program account not found on this RPC. Check SOLANA_PROGRAM_ID/PROGRAM_ID and SOLANA_RPC_URL.`,
         );
       }
     } catch (error) {
-      console.warn("[EventListener] Failed to fetch program account info:", error);
+      console.warn(
+        "[EventListener] Failed to fetch program account info:",
+        error,
+      );
     }
 
     this.subscriptionId = this.connection.onLogs(
@@ -133,11 +141,13 @@ export class OnChainEventListener {
           console.error("[EventListener] Error handling logs:", error);
         }
       },
-      "confirmed"
+      "confirmed",
     );
 
     this.isRunning = true;
-    console.log(`[EventListener] Subscribed to program logs (subscription ID: ${this.subscriptionId})`);
+    console.log(
+      `[EventListener] Subscribed to program logs (subscription ID: ${this.subscriptionId})`,
+    );
   }
 
   async stop() {
@@ -159,7 +169,9 @@ export class OnChainEventListener {
   private async handleLogs(logs: any, ctx: any) {
     const { signature, err } = logs;
 
-    console.log(`[EventListener] Received logs for tx: ${signature}, error: ${!!err}, log count: ${logs.logs?.length || 0}`);
+    console.log(
+      `[EventListener] Received logs for tx: ${signature}, error: ${!!err}, log count: ${logs.logs?.length || 0}`,
+    );
 
     // Skip failed transactions
     if (err) {
@@ -170,7 +182,7 @@ export class OnChainEventListener {
     // Parse events from logs using Anchor's event parser
     // We need to extract events from the log lines
     const logMessages = logs.logs || [];
-    
+
     for (const log of logMessages) {
       // Anchor events are emitted as base64-encoded data in logs
       // Format: "Program data: <base64>"
@@ -207,7 +219,10 @@ export class OnChainEventListener {
         await this.tryParseDepositCompleted(discriminator, data, txSignature);
         return;
       } catch (e) {
-        console.error("[EventListener] Failed to parse DepositCompleted event:", e);
+        console.error(
+          "[EventListener] Failed to parse DepositCompleted event:",
+          e,
+        );
         return;
       }
     }
@@ -217,7 +232,10 @@ export class OnChainEventListener {
         await this.tryParseTransferCompleted(discriminator, data, txSignature);
         return;
       } catch (e) {
-        console.error("[EventListener] Failed to parse TransferCompleted event:", e);
+        console.error(
+          "[EventListener] Failed to parse TransferCompleted event:",
+          e,
+        );
         return;
       }
     }
@@ -227,7 +245,10 @@ export class OnChainEventListener {
         await this.tryParseWithdrawCompleted(discriminator, data, txSignature);
         return;
       } catch (e) {
-        console.error("[EventListener] Failed to parse WithdrawCompleted event:", e);
+        console.error(
+          "[EventListener] Failed to parse WithdrawCompleted event:",
+          e,
+        );
         return;
       }
     }
@@ -248,7 +269,7 @@ export class OnChainEventListener {
   private async tryParseDepositCompleted(
     discriminator: Buffer,
     data: Buffer,
-    txSignature: string
+    txSignature: string,
   ) {
     // Manually decode the event (simpler approach without full IDL)
     // DepositCompleted layout:
@@ -312,7 +333,7 @@ export class OnChainEventListener {
   private async tryParseTransferCompleted(
     discriminator: Buffer,
     data: Buffer,
-    txSignature: string
+    txSignature: string,
   ) {
     // TransferCompleted layout:
     // - nullifier: [u8; 32]
@@ -373,7 +394,7 @@ export class OnChainEventListener {
         nextLeafIndex,
         mint,
       },
-      txSignature
+      txSignature,
     );
 
     // Publish to Redis
@@ -390,7 +411,7 @@ export class OnChainEventListener {
   private async tryParseWithdrawCompleted(
     discriminator: Buffer,
     data: Buffer,
-    txSignature: string
+    txSignature: string,
   ) {
     // WithdrawCompleted layout:
     // - nullifier: [u8; 32]
@@ -430,7 +451,7 @@ export class OnChainEventListener {
         mint,
         recipient,
       },
-      txSignature
+      txSignature,
     );
 
     // Publish to Redis
@@ -450,8 +471,8 @@ export class OnChainEventListener {
       // IMPORTANT: Anchor events provide commitments in little-endian format, but we store them
       // in big-endian format to match how the SDK computes commitments and how the relayer stores them.
       const commitmentHexBE = le32ToBeHex(event.commitment);
-      const commitmentHex = commitmentHexBE.replace(/^0x/, '');
-      
+      const commitmentHex = commitmentHexBE.replace(/^0x/, "");
+
       await prisma.tx.upsert({
         where: { commitment: commitmentHexBE },
         update: {
@@ -486,12 +507,19 @@ export class OnChainEventListener {
           },
         });
         if (updated.count > 0) {
-          console.log(`[EventListener] Updated deposit message with tx signature: ${txSignature} for owner: ${ownerKey.slice(0, 20)}...`);
+          console.log(
+            `[EventListener] Updated deposit message with tx signature: ${txSignature} for owner: ${ownerKey.slice(0, 20)}...`,
+          );
         } else {
-          console.warn(`[EventListener] No deposit message found for commitment: ${commitmentHex} and owner: ${ownerKey.slice(0, 20)}...`);
+          console.warn(
+            `[EventListener] No deposit message found for commitment: ${commitmentHex} and owner: ${ownerKey.slice(0, 20)}...`,
+          );
         }
       } catch (msgError) {
-        console.error("[EventListener] Failed to update deposit message:", msgError);
+        console.error(
+          "[EventListener] Failed to update deposit message:",
+          msgError,
+        );
         // Don't fail the whole event processing if message update fails
       }
 
@@ -509,18 +537,27 @@ export class OnChainEventListener {
       // Convert to big-endian hex for the DB join key so it matches messages.nullifier_hex
       // (which stores big-endian from snarkjs public signals).
       const nullifierBytes = Buffer.from(event.nullifier);
-      const nullifierHex = le32ToBeHex(event.nullifier).replace(/^0x/i, "").toLowerCase();
+      const nullifierHex = le32ToBeHex(event.nullifier)
+        .replace(/^0x/i, "")
+        .toLowerCase();
 
       // Store nullifier in nullifiers table (pass big-endian hex override for the join key)
       try {
-        await upsertNullifier(nullifierBytes, {
-          used: true,
-          txSignature,
-          spentAt: new Date(),
-          eventType: "transfer",
-        }, nullifierHex);
+        await upsertNullifier(
+          nullifierBytes,
+          {
+            used: true,
+            txSignature,
+            spentAt: new Date(),
+            eventType: "transfer",
+          },
+          nullifierHex,
+        );
       } catch (nullifierError) {
-        console.error("[EventListener] Failed to save nullifier:", nullifierError);
+        console.error(
+          "[EventListener] Failed to save nullifier:",
+          nullifierError,
+        );
         // Continue with storing commitments even if nullifier save fails
       }
 
@@ -587,22 +624,37 @@ export class OnChainEventListener {
           },
         });
         if (updated.count > 0) {
-          console.log(`[EventListener] Updated ${updated.count} transfer message(s) with tx signature: ${txSignature}`);
+          console.log(
+            `[EventListener] Updated ${updated.count} transfer message(s) with tx signature: ${txSignature}`,
+          );
         } else {
-          console.warn(`[EventListener] No transfer messages found for nullifier: ${nullifierHex}`);
+          console.warn(
+            `[EventListener] No transfer messages found for nullifier: ${nullifierHex}`,
+          );
         }
       } catch (msgError) {
-        console.error("[EventListener] Failed to update transfer messages:", msgError);
+        console.error(
+          "[EventListener] Failed to update transfer messages:",
+          msgError,
+        );
         // Don't fail the whole event processing if message update fails
       }
 
-      console.log(`[EventListener] Stored TransferCompleted (2 commitments + nullifier) in database`);
+      console.log(
+        `[EventListener] Stored TransferCompleted (2 commitments + nullifier) in database`,
+      );
     } catch (error) {
-      console.error("[EventListener] Failed to store TransferCompleted:", error);
+      console.error(
+        "[EventListener] Failed to store TransferCompleted:",
+        error,
+      );
     }
   }
 
-  private async storeWithdrawEvent(event: any, txSignature: string): Promise<string | null> {
+  private async storeWithdrawEvent(
+    event: any,
+    txSignature: string,
+  ): Promise<string | null> {
     try {
       // Event nullifier comes as number[] (bytes from Anchor event)
       // Anchor events provide field elements as 32-byte arrays in little-endian format.
@@ -610,8 +662,10 @@ export class OnChainEventListener {
       // Convert to big-endian hex for the DB join key so it matches messages.nullifier_hex
       // (which stores big-endian from snarkjs public signals).
       const nullifierBytes = Buffer.from(event.nullifier);
-      const nullifierHex = le32ToBeHex(event.nullifier).replace(/^0x/i, "").toLowerCase();
-      
+      const nullifierHex = le32ToBeHex(event.nullifier)
+        .replace(/^0x/i, "")
+        .toLowerCase();
+
       // Get owner key from the withdraw message (created during prepare phase)
       // The message's recipient_key is the owner's CipherPay pubkey
       let ownerKey: string | null = null;
@@ -627,22 +681,29 @@ export class OnChainEventListener {
         });
         ownerKey = message?.recipient_key ?? null;
       } catch (msgError) {
-        console.error("[EventListener] Failed to find withdraw message for owner key:", msgError);
+        console.error(
+          "[EventListener] Failed to find withdraw message for owner key:",
+          msgError,
+        );
         // Continue without owner key - it's optional
       }
 
       // Store nullifier in nullifiers table (pass big-endian hex override for the join key)
-      await upsertNullifier(nullifierBytes, {
-        used: true,
-        txSignature,
-        spentAt: new Date(),
-        eventType: "withdraw",
-      }, nullifierHex);
+      await upsertNullifier(
+        nullifierBytes,
+        {
+          used: true,
+          txSignature,
+          spentAt: new Date(),
+          eventType: "withdraw",
+        },
+        nullifierHex,
+      );
 
       // For withdrawals, we don't have a commitment to store, but we can track the nullifier
       // We'll use a special format for the commitment field to track withdrawals
       const withdrawId = nullifierHex;
-      
+
       await prisma.tx.upsert({
         where: { commitment: withdrawId },
         update: {
@@ -676,19 +737,31 @@ export class OnChainEventListener {
           },
         });
         if (updated.count > 0) {
-          console.log(`[EventListener] Updated withdraw message with tx signature: ${txSignature}`);
+          console.log(
+            `[EventListener] Updated withdraw message with tx signature: ${txSignature}`,
+          );
         } else {
-          console.warn(`[EventListener] No withdraw message found for nullifier: ${nullifierHex}`);
+          console.warn(
+            `[EventListener] No withdraw message found for nullifier: ${nullifierHex}`,
+          );
         }
       } catch (msgError) {
-        console.error("[EventListener] Failed to update withdraw message:", msgError);
+        console.error(
+          "[EventListener] Failed to update withdraw message:",
+          msgError,
+        );
         // Don't fail the whole event processing if message update fails
       }
 
-      console.log(`[EventListener] Stored WithdrawCompleted (nullifier) in database`);
+      console.log(
+        `[EventListener] Stored WithdrawCompleted (nullifier) in database`,
+      );
       return ownerKey;
     } catch (error) {
-      console.error("[EventListener] Failed to store WithdrawCompleted:", error);
+      console.error(
+        "[EventListener] Failed to store WithdrawCompleted:",
+        error,
+      );
       return null;
     }
   }
@@ -702,15 +775,17 @@ export class OnChainEventListener {
         const channel = `inbox:${data.ownerCipherpayPubkey}`;
         await this.redis.publish(
           channel,
-          JSON.stringify({ type: eventType, ...data })
+          JSON.stringify({ type: eventType, ...data }),
         );
-        console.log(`[EventListener] Published ${eventType} to Redis channel: ${channel}`);
+        console.log(
+          `[EventListener] Published ${eventType} to Redis channel: ${channel}`,
+        );
       }
 
       // Also publish to a general events channel
       await this.redis.publish(
         "events:all",
-        JSON.stringify({ type: eventType, ...data })
+        JSON.stringify({ type: eventType, ...data }),
       );
     } catch (error) {
       console.error("[EventListener] Failed to publish event to Redis:", error);
@@ -720,4 +795,3 @@ export class OnChainEventListener {
 
 // Singleton instance
 export const eventListener = new OnChainEventListener();
-

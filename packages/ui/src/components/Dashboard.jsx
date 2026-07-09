@@ -6,13 +6,16 @@ import {
   LayoutDashboard, ArrowDownToLine, ArrowLeftRight, ArrowUpFromLine, FileStack,
   Radio, Cpu, KeyRound, ClipboardList, Bell, Lock, Settings as SettingsIcon, LifeBuoy,
   Wallet as WalletIcon, User, ShieldCheck, Copy, RefreshCw, LogOut, ExternalLink,
-  Check, X, Info, Loader2, ArrowRight, AlertTriangle, ChevronDown,
+  Check, X, Info, Loader2, ArrowRight, AlertTriangle, ChevronDown, CheckCircle2,
 } from 'lucide-react';
 import SolanaStatus from './SolanaStatus';
 import SDKStatus from './SDKStatus';
+import MessageModal from './MessageModal';
 import authService from '../services/authService';
 import { decryptFromSenderForMe } from '../lib/e2ee';
 import { parseFriendlyErrorMessage } from '../utils/errorMessages';
+
+const INFO_MODAL_ICONS = { info: Info, success: CheckCircle2, error: AlertTriangle };
 
 function Dashboard() {
   const navigate = useNavigate();
@@ -63,6 +66,8 @@ function Dashboard() {
   const [showDestroyAtaModal, setShowDestroyAtaModal] = useState(false);
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [errorModalContent, setErrorModalContent] = useState({ title: '', message: '' });
+  const [infoModal, setInfoModal] = useState(null); // { title, message, tone }
+  const [showApproveConfirm, setShowApproveConfirm] = useState(false);
   const [selectedNoteType, setSelectedNoteType] = useState(null); // 'spendable' or 'all'
   const [recentActivities, setRecentActivities] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
@@ -210,6 +215,8 @@ function Dashboard() {
     const interval = setInterval(fetchBalances, 5000);
     return () => clearInterval(interval);
   }, [wallet.publicKey]);
+
+  const showInfoModal = (title, message, tone = 'info') => setInfoModal({ title, message, tone });
 
   const handleDisconnect = async () => {
     try {
@@ -534,7 +541,7 @@ function Dashboard() {
 
   const handleApproveDelegate = async () => {
     if (!approveAmount || parseFloat(approveAmount) <= 0) {
-      alert('Please enter a valid approval amount');
+      showInfoModal('Invalid amount', 'Please enter a valid approval amount.');
       return;
     }
     try {
@@ -555,7 +562,7 @@ function Dashboard() {
       setShowApproveModal(false);
       setApproveAmount('10');
       
-      alert(`Delegate approved! You can now make deposits. Transaction: ${result?.signature || 'success'}`);
+      showInfoModal('Delegate approved', `You can now make deposits. Transaction: ${result?.signature || 'success'}`, 'success');
     } catch (err) {
       console.error('[Dashboard] Failed to approve delegate:', err);
       clearError();
@@ -571,20 +578,14 @@ function Dashboard() {
 
   const handleDeposit = async () => {
     if (!depositAmount || parseFloat(depositAmount) <= 0) {
-      alert('Please enter a valid deposit amount');
+      showInfoModal('Invalid amount', 'Please enter a valid deposit amount.');
       return;
     }
-    
+
     // Check if delegate approval is needed
     if (!isDelegateApproved) {
-      const shouldApprove = confirm('You need to approve the relayer as a delegate before making your first deposit. Would you like to approve now?');
-      if (shouldApprove) {
-        setShowDepositModal(false);
-        setShowApproveModal(true);
-        return;
-      } else {
-        return;
-      }
+      setShowApproveConfirm(true);
+      return;
     }
     
     try {
@@ -608,7 +609,7 @@ function Dashboard() {
       setDepositAmount('');
       await refreshData();
       
-      alert(`Deposit successful! Transaction: ${result?.txHash || result?.signature || 'pending'}`);
+      showInfoModal('Deposit successful', `Transaction: ${result?.txHash || result?.signature || 'pending'}`, 'success');
     } catch (err) {
       console.error('[Dashboard] Failed to deposit:', err);
       clearError();
@@ -620,6 +621,12 @@ function Dashboard() {
     } finally {
       setActionLoading(false);
     }
+  };
+
+  const handleConfirmApproveNow = () => {
+    setShowApproveConfirm(false);
+    setShowDepositModal(false);
+    setShowApproveModal(true);
   };
 
   // Close transfer modal and reset state
@@ -676,23 +683,23 @@ function Dashboard() {
 
   const handleTransfer = async () => {
     if (!transferAmount || parseFloat(transferAmount) <= 0) {
-      alert('Please enter a valid transfer amount');
+      showInfoModal('Invalid amount', 'Please enter a valid transfer amount.');
       return;
     }
     if (!transferRecipient || transferRecipient.trim() === '') {
-      alert('Please enter a recipient address or username');
+      showInfoModal('Recipient required', 'Please enter a recipient address or username.');
       return;
     }
-    
+
     // If username lookup is still in progress, wait
     if (recipientLookupStatus === 'loading') {
-      alert('Please wait while we look up the username...');
+      showInfoModal('Please wait', "We're still looking up that username.");
       return;
     }
-    
+
     // If username was not found
     if (recipientLookupStatus === 'not_found') {
-      alert('User not found. Please check the username or enter a valid public key.');
+      showInfoModal('User not found', 'Please check the username or enter a valid public key.');
       return;
     }
     
@@ -719,7 +726,7 @@ function Dashboard() {
       await refreshData();
       
       const txHash = transaction?.id || transaction?.txHash || 'pending';
-      alert(`Transfer successful to ${recipientDisplay}! Transaction: ${txHash}`);
+      showInfoModal('Transfer successful', `Sent to ${recipientDisplay}. Transaction: ${txHash}`, 'success');
     } catch (err) {
       console.error('Failed to transfer:', err);
       clearError();
@@ -742,17 +749,17 @@ function Dashboard() {
       const notes = await getWithdrawableNotes();
       
       if (notes.length === 0) {
-        alert('No withdrawable notes available. Please deposit funds first.');
+        showInfoModal('No notes available', 'Please deposit funds first.');
         return;
       }
-      
+
       // Use connected wallet address as recipient
       const recipientAddress = publicAddress;
       if (!recipientAddress) {
-        alert('Please connect your wallet first');
+        showInfoModal('Wallet required', 'Please connect your wallet first.');
         return;
       }
-      
+
       if (notes.length === 1) {
         // Only one note: automatically withdraw the full amount
         console.log('[Dashboard] Only one note available, auto-withdrawing:', notes[0]);
@@ -786,7 +793,11 @@ function Dashboard() {
       setSelectedNoteForWithdraw(null);
       setWithdrawableNotes([]);
       await refreshData();
-      alert(`Withdraw successful! Amount: ${note.amountFormatted || (Number(note.amount) / 1e9).toFixed(9) + ' SOL'}\nTransaction: ${result.txHash || result.signature || 'pending'}`);
+      showInfoModal(
+        'Withdraw successful',
+        `Amount: ${note.amountFormatted || (Number(note.amount) / 1e9).toFixed(9) + ' SOL'}\nTransaction: ${result.txHash || result.signature || 'pending'}`,
+        'success'
+      );
     } catch (err) {
       console.error('Failed to withdraw:', err);
       clearError();
@@ -808,10 +819,10 @@ function Dashboard() {
     // Use connected wallet address as recipient
     const recipientAddress = publicAddress;
     if (!recipientAddress) {
-      alert('Please connect your wallet first');
+      showInfoModal('Wallet required', 'Please connect your wallet first.');
       return;
     }
-    
+
     // Execute withdraw with selected note
     executeWithdraw(note, recipientAddress);
   };
@@ -1637,36 +1648,42 @@ function Dashboard() {
       )}
 
       {/* Error Modal - friendly display for action failures */}
-      {showErrorModal && (
-        <div
-          className="fixed inset-0 z-50 flex h-full w-full items-center justify-center overflow-y-auto bg-black/60 p-4"
-          onClick={() => { setShowErrorModal(false); setErrorModalContent({ title: '', message: '' }); }}
-        >
-          <div className="relative mx-auto w-full max-w-md rounded-xl border border-white/10 bg-[#0d1220] p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-start">
-              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-red-500/15">
-                <X className="h-5 w-5 text-red-400" />
-              </div>
-              <div className="ml-4 flex-1">
-                <h3 className="text-lg font-medium text-white">{errorModalContent.title}</h3>
-                <p className="mt-2 whitespace-pre-wrap text-sm text-gray-400">{errorModalContent.message}</p>
-                <div className="mt-6">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowErrorModal(false);
-                      setErrorModalContent({ title: '', message: '' });
-                    }}
-                    className="flex w-full items-center justify-center rounded-md bg-red-600 px-4 py-2 text-base font-medium text-white hover:bg-red-500"
-                  >
-                    OK
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <MessageModal
+        open={showErrorModal}
+        onClose={() => { setShowErrorModal(false); setErrorModalContent({ title: '', message: '' }); }}
+        tone="error"
+        icon={AlertTriangle}
+        title={errorModalContent.title}
+        description={errorModalContent.message}
+        primaryLabel="OK"
+        onPrimary={() => { setShowErrorModal(false); setErrorModalContent({ title: '', message: '' }); }}
+      />
+
+      {/* Generic info/success modal - replaces browser alert() for validation & confirmations */}
+      <MessageModal
+        open={!!infoModal}
+        onClose={() => setInfoModal(null)}
+        tone={infoModal?.tone || 'info'}
+        icon={INFO_MODAL_ICONS[infoModal?.tone || 'info']}
+        title={infoModal?.title}
+        description={infoModal?.message}
+        primaryLabel="OK"
+        onPrimary={() => setInfoModal(null)}
+      />
+
+      {/* Approve-relayer confirmation - replaces browser confirm() before first deposit */}
+      <MessageModal
+        open={showApproveConfirm}
+        onClose={() => setShowApproveConfirm(false)}
+        tone="info"
+        icon={AlertTriangle}
+        title="Approve relayer first"
+        description="You need to approve the relayer as a delegate before making your first deposit. Would you like to approve now?"
+        secondaryLabel="Cancel"
+        onSecondary={() => setShowApproveConfirm(false)}
+        primaryLabel="Approve Now"
+        onPrimary={handleConfirmApproveNow}
+      />
 
       {/* Deposit Modal */}
       {showDepositModal && (
