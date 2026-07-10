@@ -57,7 +57,6 @@ function Dashboard() {
   const [withdrawableNotes, setWithdrawableNotes] = useState([]);
   const [selectedNoteForWithdraw, setSelectedNoteForWithdraw] = useState(null);
   const [isDelegateApproved, setIsDelegateApproved] = useState(false);
-  const delegateCheckCompleteRef = useRef(false); // Once we have on-chain result, don't let fallback override
   const [walletBalance, setWalletBalance] = useState(0);
   const [walletBalanceError, setWalletBalanceError] = useState(null);
   const [copiedItem, setCopiedItem] = useState(null); // Track what was copied for feedback
@@ -147,19 +146,19 @@ function Dashboard() {
     }
   }, [isAuthenticated, authUser]);
 
-  // Check on-chain if relayer delegate is already approved (so we don't prompt every login)
+  // Check on-chain if relayer delegate is already approved (so we don't prompt every login).
+  // Do NOT assume approved just because the user has existing notes (e.g. from before a relayer
+  // key rotation) - that previously raced with this check and could hide the approval banner
+  // while the on-chain delegate was actually stale, letting deposits fail server-side instead.
   useEffect(() => {
     const check = async () => {
       if (!wallet.publicKey || !checkRelayerDelegateApproved) return;
-      delegateCheckCompleteRef.current = false;
       try {
         const approved = await checkRelayerDelegateApproved({
           walletPublicKey: wallet.publicKey.toBase58(),
         });
-        delegateCheckCompleteRef.current = true;
         setIsDelegateApproved(approved);
       } catch (err) {
-        delegateCheckCompleteRef.current = true;
         console.warn('[Dashboard] checkRelayerDelegateApproved:', err?.message);
       }
     };
@@ -168,15 +167,6 @@ function Dashboard() {
     // gets a new reference on every provider render; including it here would re-run this on-chain
     // check (and its RPC calls) on nearly every render instead of only when the wallet changes.
   }, [wallet.publicKey]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Fallback: if user has shielded notes, assume approved ONLY while we're still waiting for the on-chain check.
-  // Once the check completes, trust its result - do NOT override a false (e.g. after relayer key rotation).
-  useEffect(() => {
-    if (delegateCheckCompleteRef.current) return; // Trust on-chain result, don't override
-    if ((spendableNotes?.length > 0 || allNotes?.length > 0) && !isDelegateApproved) {
-      setIsDelegateApproved(true);
-    }
-  }, [spendableNotes?.length, allNotes?.length, isDelegateApproved]);
 
   // Fetch wallet balance and ATA balance via the backend, not a direct browser connection
   // to the validator — browsers in this environment cannot reliably hold a direct connection
